@@ -1,0 +1,14 @@
+arb-dir: lib/src/l10n
+template-arb-file: amphitheatre_en.arb
+
+preferred-supported-locales: en
+header: /// Automatically generated localizations for Amphitheatre.
+
+# File to list messages that need to be translated.
+untranslated-messages-file: untranslated-messages.json
+
+# Output file containing localizations
+output-localization-file: amphitheatre_localizations.dart
+output-class: AmphitheatreLocalizations
+output-dir: lib/src/l10n/
+synthetic-package: false

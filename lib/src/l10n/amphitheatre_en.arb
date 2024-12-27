@@ -1,0 +1,26 @@
+{
+    "close": "Close",
+    "@close": {
+        "description": "Label for the close button."
+    },
+    "back10Seconds": "-10s",
+    "@back10Seconds": {
+        "description": "Label for the button that skips backwards in the video, by 10 seconds."
+    },
+    "forward10Seconds": "+10s",
+    "@forward10Seconds": {
+        "description": "Label for the button that skips forwards in the video, by 10 seconds."
+    },
+    "pause": "Pause",
+    "@pause": {
+        "description": "Label for the button that pauses the video."
+    },
+    "play": "Play",
+    "@play": {
+        "description": "Label for the button that plays the video."
+    },
+    "replay": "Replay",
+    "@replay": {
+        "description": "Label for the button that replays the video."
+    }
+}
