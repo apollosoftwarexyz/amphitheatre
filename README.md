@@ -7,10 +7,10 @@ A Flutter video player and editor.
         <tbody>
             <tr>
                 <td align="center">
-                    <img src="screenshots/player.png" width="256px" alt="Screenshot of player" />
+                    <img src="https://raw.githubusercontent.com/apollosoftwarexyz/amphitheatre/master/screenshots/player.png" width="256px" alt="Screenshot of player" />
                 </td>
                 <td align="center">
-                    <img src="screenshots/editor.png" width="256px" alt="Screenshot of editor" />
+                    <img src="https://raw.githubusercontent.com/apollosoftwarexyz/amphitheatre/master/screenshots/editor.png" width="256px" alt="Screenshot of editor" />
                 </td>
             </tr>
             <tr>
@@ -52,6 +52,51 @@ the platform channel implementation.</small>
 
 First, refer to [Setup for the `video_player` package](https://pub.dev/packages/video_player#setup) to ensure the media
 can be played from your desired source.
+
+Then, construct an `Amphitheatre`. For convenience, you can use the `Amphitheatre.launch` function to simply launch a
+new screen with the player:
+
+```dart
+/// Launches a screen with the Amphitheatre video player.
+void showVideo({ required final File myVideo }) {
+  Amphitheatre.launch(
+    context,
+    controller: AmphitheatreController(
+      controller: VideoPlayerController.file(myVideo),
+      info: AmphitheatreVideoInfo(
+        title: "Title of the video",
+        subtitle: "This is a subtitle.",
+        description:
+        "This is a long form description of the video. Lorem ipsum dolor sit amet.",
+      ),
+    ),
+  );
+}
+```
+
+...and similarly for the editor:
+
+```dart
+/// Launchers a screen with the Amphitheatre editor.
+/// 
+/// Returns a path to the output file (with the edited video)
+/// on success, returns null on failure (or if the user closes
+/// the screen without accepting changes).
+Future<String?> editVideo({ required final File myVideo }) async {
+  return await AmphitheatreEditor.launch(
+    context,
+    controller: AmphitheatreController(
+      controller: VideoPlayerController.file(
+        _chosenVideo!,
+      ),
+    ),
+  );
+}
+```
+
+Alternatively, you can either use `Amphitheatre.consume` to have Amphitheatre assume control of an `AmphitheatreController`
+that you pass in - or you can simply use `Amphitheatre` with a controller that you manage as part of your own widget's
+lifecycle (and likewise with the `AmphitheatreEditor`).
 
 ### Localization (l10n) Support
 

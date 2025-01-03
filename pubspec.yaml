@@ -1,6 +1,6 @@
 name: amphitheatre
 description: "A Flutter video player and editor."
-version: 0.0.1
+version: 0.0.1+1
 homepage: https://github.com/apollosoftwarexyz/amphitheatre
 
 environment:
