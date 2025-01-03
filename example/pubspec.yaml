@@ -1,4 +1,5 @@
 name: amphitheatre_example
+version: 0.0.0+0
 description: "Demonstrates how to use the amphitheatre plugin."
 publish_to: 'none'
 
@@ -16,6 +17,7 @@ dependencies:
     path: ../
 
   video_player: ^2.9.2
+  image_picker: ^1.1.2
 
 dev_dependencies:
   integration_test:

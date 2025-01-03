@@ -72,6 +72,10 @@ sealed class _AmphitheatreAnimatedOpacityIconButton extends StatelessWidget {
   /// The icon to display on the button.
   Widget get _icon;
 
+  /// Returns true when the button should be disabled (e.g., because
+  /// [_onPressed] is null).
+  bool get _disabled => false;
+
   /// The action to perform when the button is pressed.
   void _onPressed(final BuildContext context);
 
@@ -84,7 +88,11 @@ sealed class _AmphitheatreAnimatedOpacityIconButton extends StatelessWidget {
   Widget build(final BuildContext context) => IgnorePointer(
         ignoring: !_visible,
         child: AnimatedOpacity(
-          opacity: _visible ? 1 : 0,
+          opacity: _disabled
+              ? 0.6
+              : _visible
+                  ? 1
+                  : 0,
           duration: controller.animationDuration,
           curve: controller.animationCurve,
           child: Column(
@@ -95,10 +103,11 @@ sealed class _AmphitheatreAnimatedOpacityIconButton extends StatelessWidget {
               IconButton(
                 color: color,
                 iconSize: size,
-                onPressed: () => _onPressed(context),
+                onPressed: _disabled ? null : () => _onPressed(context),
                 icon: _icon,
-                tooltip: _getTooltip(context),
+                tooltip: _captionVisible ? null : _getTooltip(context),
                 style: ButtonStyle(
+                  foregroundColor: WidgetStatePropertyAll(color),
                   backgroundColor: WidgetStatePropertyAll(backgroundColor),
                 ),
               ),
@@ -110,7 +119,7 @@ sealed class _AmphitheatreAnimatedOpacityIconButton extends StatelessWidget {
                     duration: controller.animationDuration,
                     curve: controller.animationCurve,
                     child: GestureDetector(
-                      onTap: () => _onPressed(context),
+                      onTap: _disabled ? null : () => _onPressed(context),
                       child: Text(
                         _getTooltip(context),
                         style: TextStyle(
@@ -226,6 +235,70 @@ class AmphitheatreCloseButton extends _AmphitheatreAnimatedOpacityIconButton {
     super.debugFillProperties(properties);
     properties.add(
       ObjectFlagProperty<AmphitheatreCloseButtonAction>.has(
+        'onPressed',
+        onPressed,
+      ),
+    );
+  }
+}
+
+/// A simple 'Cancel' button that inherits its icon and other semantics from
+/// [AmphitheatreCloseButton]. The default differences between the cancel and
+/// close buttons are that the cancel button will naturally have a 'Cancel'
+/// tooltip and the caption will always be shown.
+class AmphitheatreCancelButton extends AmphitheatreCloseButton {
+  /// Construct an [AmphitheatreCancelButton].
+  const AmphitheatreCancelButton({
+    required super.controller,
+    super.size,
+    super.color,
+    super.backgroundColor,
+    super.show,
+    super.showCaption = AmphitheatreVisibility.always,
+    super.onPressed,
+    super.key,
+  });
+
+  @override
+  String _getTooltip(final BuildContext context) =>
+      getLocalizationDelegate(context).cancel;
+}
+
+/// A simple 'Done' button with a tooltip. Performs the [onPressed] action when
+/// pressed.
+class AmphitheatreDoneButton extends _AmphitheatreAnimatedOpacityIconButton {
+  /// The action to perform when the [AmphitheatreDoneButton] is pressed.
+  final void Function(BuildContext context)? onPressed;
+
+  /// Construct an [AmphitheatreDoneButton].
+  const AmphitheatreDoneButton({
+    required super.controller,
+    this.onPressed,
+    super.size = 40,
+    super.color,
+    super.show = AmphitheatreVisibility.always,
+    super.showCaption = AmphitheatreVisibility.always,
+    super.key,
+  });
+
+  @override
+  String _getTooltip(final BuildContext context) =>
+      getLocalizationDelegate(context).done;
+
+  @override
+  Widget get _icon => const Icon(Icons.check);
+
+  @override
+  bool get _disabled => onPressed == null;
+
+  @override
+  void _onPressed(final BuildContext context) => onPressed?.call(context);
+
+  @override
+  void debugFillProperties(final DiagnosticPropertiesBuilder properties) {
+    super.debugFillProperties(properties);
+    properties.add(
+      ObjectFlagProperty<void Function(BuildContext context)>.has(
         'onPressed',
         onPressed,
       ),

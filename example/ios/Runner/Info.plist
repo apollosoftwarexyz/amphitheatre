@@ -38,6 +38,12 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>To take photos or record videos for demo purposes.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>To record videos for demo purposes.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>To access photos and videos for demo purposes.</string>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

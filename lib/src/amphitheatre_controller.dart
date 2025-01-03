@@ -1,8 +1,12 @@
 import 'dart:async';
 
+import 'package:amphitheatre/src/amphitheatre.dart';
+import 'package:amphitheatre/src/editor/amphitheatre_editor.dart';
 import 'package:amphitheatre/src/utils.dart';
+import 'package:cross_file/cross_file.dart';
 import 'package:flutter/animation.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 
 /// Stores non-technical information about the video.
@@ -165,4 +169,81 @@ class AmphitheatreController with ChangeNotifier {
     // re-initialized if desired.
     _initialized = false;
   }
+
+  /// Fetch the data for the video from the underlying controller (e.g., so it
+  /// can be used by the [AmphitheatreEditor]).
+  ///
+  /// The controller must have been initialized (see [initialize]), or this
+  /// function throws an error.
+  ///
+  /// This currently only supports [DataSourceType.file] and
+  /// [DataSourceType.asset]. At present, the simplest workaround is to load
+  /// unsupported file types using XFile, then save it into a temporary file and
+  /// then construct a [VideoPlayerController.file] with it, when initializing
+  /// the [AmphitheatreController].
+  Future<AmphitheatreVideo> getVideo() async {
+    if (!controller.value.isInitialized) {
+      throw StateError('The controller has not been initialized yet.');
+    }
+
+    String name;
+    Uint8List data;
+    final Duration duration = controller.value.duration;
+
+    switch (controller.dataSourceType) {
+      case DataSourceType.file:
+        final Uri uri = Uri.parse(controller.dataSource).normalizePath();
+        name = uri.pathSegments.last;
+        data = await XFile(uri.path).readAsBytes();
+      case DataSourceType.asset:
+        // Assets use keys which are always delimited by a forward slash.
+        name = controller.dataSource.split('/').last;
+        data = Uint8List.view(
+          (await rootBundle.load(controller.dataSource)).buffer,
+        );
+      case DataSourceType.network:
+        // NOTE: Not yet implemented as I didn't want to introduce a dependency
+        // on the HTTP package yet and I haven't considered the final UX 'flow'.
+
+        // NOTE: when implementing network, don't forget that the dataSource is
+        // presumably just the URL. In which case, if there are any query
+        // parameters, the platform.splitPath(controller.dataSource).last
+        // heuristic won't work. (It also wouldn't be a backslash on Windows).
+        // So proper URL parsing will need to be used to isolate the path
+        // segment of the URL.
+        throw UnimplementedError(
+          '[Amphitheatre] Data source type not yet supported: network',
+        );
+      default:
+        throw UnsupportedError(
+          '[Amphitheatre] Unknown or unsupported data source type: ${controller.dataSourceType}',
+        );
+    }
+
+    return AmphitheatreVideo(
+      name: name,
+      data: data,
+      duration: duration,
+    );
+  }
+}
+
+/// Holds data about a video being displayed by [Amphitheatre].
+@immutable
+final class AmphitheatreVideo {
+  /// The name of the video file.
+  final String name;
+
+  /// The duration of the video.
+  final Duration duration;
+
+  /// The raw data of the video.
+  final Uint8List data;
+
+  /// Construct an [AmphitheatreVideo].
+  const AmphitheatreVideo({
+    required this.name,
+    required this.duration,
+    required this.data,
+  });
 }

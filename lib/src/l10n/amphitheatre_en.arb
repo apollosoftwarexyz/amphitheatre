@@ -1,7 +1,15 @@
 {
+    "cancel": "Cancel",
+    "@cancel": {
+        "description": "Label for the cancel button. This replaces the close button in the editor."
+    },
     "close": "Close",
     "@close": {
-        "description": "Label for the close button."
+        "description": "Label for the close button. Shown in the top-left of the video player and editor."
+    },
+    "done": "Done",
+    "@done": {
+        "description": "Label for the done button. Shown in the top-right of the video editor, used to confirm the crop."
     },
     "back10Seconds": "-10s",
     "@back10Seconds": {
@@ -22,5 +30,18 @@
     "replay": "Replay",
     "@replay": {
         "description": "Label for the button that replays the video."
+    },
+    "exportingVideo": "Exporting video ({progress})...",
+    "@exportingVideo": {
+        "description": "Label indicating the progress when exporting a video with percentage progress.",
+        "placeholders": {
+            "progress": {
+                "type": "double",
+                "format": "decimalPercentPattern",
+                "optionalParameters": {
+                    "decimalDigits": 1
+                }
+            }
+        }
     }
 }

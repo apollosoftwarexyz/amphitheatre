@@ -77,6 +77,10 @@ class Amphitheatre extends StatefulWidget {
   /// screen when the controls are not hidden.
   final AmphitheatreComponentBuilder buildCloseButton;
 
+  /// Builder for the done button. This button shows in the top-right of the
+  /// screen when the controls are not hidden.
+  final AmphitheatreComponentBuilder? buildDoneButton;
+
   /// Builder for the replay button. This button shows in the center of the
   /// screen when the video has ended.
   ///
@@ -127,6 +131,7 @@ class Amphitheatre extends StatefulWidget {
   const Amphitheatre({
     required this.controller,
     this.buildCloseButton = _buildCloseButton,
+    this.buildDoneButton,
     this.buildReplayButton = _buildReplayButton,
     this.buildProgressSlider = _buildProgressSlider,
     this.buildVideoControls = _buildVideoControls,
@@ -148,6 +153,7 @@ class Amphitheatre extends StatefulWidget {
   const Amphitheatre.consume({
     required this.controller,
     this.buildCloseButton = _buildCloseButton,
+    this.buildDoneButton,
     this.buildReplayButton = _buildReplayButton,
     this.buildProgressSlider = _buildProgressSlider,
     this.buildVideoControls = _buildVideoControls,
@@ -184,6 +190,12 @@ class Amphitheatre extends StatefulWidget {
         ObjectFlagProperty<AmphitheatreComponentBuilder>.has(
           'buildCloseButton',
           buildCloseButton,
+        ),
+      )
+      ..add(
+        ObjectFlagProperty<AmphitheatreComponentBuilder?>.has(
+          'buildDoneButton',
+          buildDoneButton,
         ),
       )
       ..add(
@@ -301,6 +313,17 @@ class _AmphitheatreState extends State<Amphitheatre> {
                 ),
               ),
             ),
+            if (widget.buildDoneButton != null)
+              Positioned(
+                top: 20,
+                right: 20,
+                child: SafeArea(
+                  child: widget.buildDoneButton!(
+                    widget.controller,
+                    _showControls,
+                  ),
+                ),
+              ),
             if (widget.enableReplayButton)
               Center(
                 child: widget.buildReplayButton(

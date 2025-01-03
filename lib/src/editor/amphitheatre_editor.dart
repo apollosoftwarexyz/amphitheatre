@@ -1,17 +1,21 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:math';
 import 'dart:ui' as ui
     show Codec, Image, PictureRecorder, instantiateImageCodec;
 
-import 'package:amphitheatre/src/amphitheatre.dart';
-import 'package:amphitheatre/src/amphitheatre_components.dart';
-import 'package:amphitheatre/src/amphitheatre_controller.dart';
+import 'package:amphitheatre/amphitheatre.dart';
+import 'package:amphitheatre/src/amphitheatre_platform.dart';
 import 'package:amphitheatre/src/raw_asset_image.dart';
+import 'package:amphitheatre/src/utils.dart';
+import 'package:cross_file/cross_file.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+
+part 'amphitheatre_editor_controller.dart';
 
 /// Editing options for the [AmphitheatreEditor].
 @immutable
@@ -161,14 +165,20 @@ final class AmphitheatreEditorStyle {
 ///
 /// This can be used to customize the route and therefore the transition that is
 /// used when an [AmphitheatreEditor] is launched.
-typedef AmphitheatreEditorRouteBuilder = Route<void> Function(Widget child);
+typedef AmphitheatreEditorRouteBuilder = Route<String?> Function(Widget child);
 
-Route<void> _defaultAmphitheatreEditorRouteBuilder(final Widget child) =>
-    MaterialPageRoute<void>(builder: (final _) => child);
+Route<String?> _defaultAmphitheatreEditorRouteBuilder(final Widget child) =>
+    MaterialPageRoute<String?>(builder: (final _) => child);
+
+/// A builder that returns a [Scaffold], rendered when the [AmphitheatreEditor]
+/// is exporting the new video.
+typedef AmphitheatreExporterProgressBuilder = Widget Function({
+  required double progress,
+});
 
 /// The Amphitheatre video editor.
 class AmphitheatreEditor extends StatefulWidget {
-  /// The controller for the [AmphitheatreEditor].
+  /// The controller for the [Amphitheatre] player.
   final AmphitheatreController controller;
 
   /// Editing options for the [AmphitheatreEditor].
@@ -176,6 +186,9 @@ class AmphitheatreEditor extends StatefulWidget {
 
   /// Styling options for the [AmphitheatreEditor].
   final AmphitheatreEditorStyle style;
+
+  /// The exporter progress screen builder.
+  final AmphitheatreExporterProgressBuilder buildExporterProgress;
 
   /// See [Amphitheatre.consumedController].
   final bool consumedController;
@@ -185,6 +198,7 @@ class AmphitheatreEditor extends StatefulWidget {
     required this.controller,
     this.style = const AmphitheatreEditorStyle(),
     this.options = const AmphitheatreEditorOptions(),
+    this.buildExporterProgress = _buildAmphitheatreExporterProgress,
     super.key,
   }) : consumedController = false;
 
@@ -193,19 +207,23 @@ class AmphitheatreEditor extends StatefulWidget {
     required this.controller,
     this.style = const AmphitheatreEditorStyle(),
     this.options = const AmphitheatreEditorOptions(),
+    this.buildExporterProgress = _buildAmphitheatreExporterProgress,
     super.key,
   }) : consumedController = true;
 
   /// Launches the [AmphitheatreEditor] with the given controller, consuming the
   /// controller. See [AmphitheatreEditor.consume].
-  static void launch(
+  ///
+  /// When the [AmphitheatreEditor] pops, it either pops with null (if no
+  /// changes were made), or it pops with the path to the modified video.
+  static Future<String?> launch(
     final BuildContext context, {
     required final AmphitheatreController controller,
     final AmphitheatreEditorRouteBuilder routeBuilder =
         _defaultAmphitheatreEditorRouteBuilder,
-  }) {
+  }) async {
     final Widget child = AmphitheatreEditor.consume(controller: controller);
-    unawaited(Navigator.of(context).push(routeBuilder(child)));
+    return Navigator.of(context).push<String?>(routeBuilder(child));
   }
 
   @override
@@ -221,35 +239,175 @@ class AmphitheatreEditor extends StatefulWidget {
       ..add(DiagnosticsProperty<AmphitheatreEditorStyle>('style', style))
       ..add(DiagnosticsProperty<AmphitheatreEditorOptions>('options', options))
       ..add(
+        ObjectFlagProperty<AmphitheatreExporterProgressBuilder>.has(
+          'buildExporterProgress',
+          buildExporterProgress,
+        ),
+      )
+      ..add(
         DiagnosticsProperty<bool>('consumedController', consumedController),
       );
   }
 }
 
 class _AmphitheatreEditorState extends State<AmphitheatreEditor> {
-  late final _createAmphitheatre =
+  bool _exporting = false;
+
+  /// When the video is exporting.
+  bool get exporting => _exporting;
+
+  late final _amphitheatre =
       widget.consumedController ? Amphitheatre.consume : Amphitheatre.new;
 
+  final AmphitheatreEditorController editorController =
+      AmphitheatreEditorController();
+
   @override
-  Widget build(final BuildContext context) => _createAmphitheatre(
-        controller: widget.controller,
-        enableToggleControls: false,
-        enableReplayButton: false,
-        autoPlay: false,
-        buildCloseButton: (final controller, final _) =>
-            AmphitheatreCloseButton(
+  void initState() {
+    editorController.addListener(() => setState(() {}));
+    super.initState();
+  }
+
+  @override
+  void dispose() {
+    editorController.dispose();
+    super.dispose();
+  }
+
+  /// Whether the changes can be accepted. This is currently based on whether
+  /// there is a crop set as even if the video is of acceptable length, the crop
+  /// options initialize to that full length. (So it is only null when the
+  /// editor has not fully initialized).
+  bool get canAcceptChanges => editorController.value.crop != null;
+
+  Future<void> produceOutputVideo() async {
+    if (_exporting) return;
+    setState(() {
+      _exporting = true;
+    });
+
+    final AmphitheatrePlatform platform = getAmphitheatrePlatform();
+    final String tempDir = await platform.getTemporaryDirectory();
+
+    // Extract the video data and save it into a file in the Amphitheatre
+    // temporary directory.
+    final AmphitheatreVideo video = await widget.controller.getVideo();
+    final inputFile = XFile.fromData(video.data);
+    final String inputFilePath = platform.joinPath(tempDir, video.name);
+    await inputFile.saveTo(inputFilePath);
+
+    // Now step through each of the modifications (currently, just a crop).
+    final AmphitheatreEditorActionCrop? crop = editorController.value.crop;
+    var outputFilePath = inputFilePath;
+
+    if (crop != null &&
+        (crop.start > Duration.zero || crop.end < video.duration)) {
+      outputFilePath = await getAmphitheatrePlatform().cropVideo(
+        path: inputFilePath,
+        start: crop.start.inMilliseconds,
+        end: crop.end.inMilliseconds,
+      );
+    }
+
+    Navigator.of(context).pop(outputFilePath);
+  }
+
+  @override
+  Widget build(final BuildContext context) {
+    if (_exporting) {
+      return widget.buildExporterProgress(progress: 0);
+    }
+
+    return _amphitheatre(
+      controller: widget.controller,
+      enableToggleControls: false,
+      enableReplayButton: false,
+      autoPlay: false,
+      buildCloseButton: (final controller, final _) =>
+          AmphitheatreCancelButton(controller: controller),
+      buildDoneButton: (final controller, final _) => AmphitheatreDoneButton(
+        controller: controller,
+        onPressed: canAcceptChanges
+            ? (final _) => unawaited(produceOutputVideo())
+            : null,
+      ),
+      buildProgressSlider: (final controller, final __) => Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: AmphitheatreEditorSlider(
           controller: controller,
-          showCaption: AmphitheatreVisibility.never,
+          editorController: editorController,
+          options: widget.options,
+          style: widget.style,
         ),
-        buildProgressSlider: (final controller, final __) => Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: AmphitheatreEditorSlider(
-            controller: controller,
-            options: widget.options,
-            style: widget.style,
+      ),
+    );
+  }
+
+  @override
+  void debugFillProperties(final DiagnosticPropertiesBuilder properties) {
+    super.debugFillProperties(properties);
+    properties
+      ..add(
+        DiagnosticsProperty<AmphitheatreEditorController>(
+          'editorController',
+          editorController,
+        ),
+      )
+      ..add(DiagnosticsProperty<bool>('exporting', exporting));
+    properties
+        .add(DiagnosticsProperty<bool>('canAcceptChanges', canAcceptChanges));
+  }
+}
+
+Widget _buildAmphitheatreExporterProgress({required final double progress}) =>
+    AmphitheatreExporterProgress(progress: progress);
+
+/// The default exporter progress screen for the [AmphitheatreEditor].
+class AmphitheatreExporterProgress extends StatelessWidget {
+  /// The progress of the export job.
+  final double progress;
+
+  /// Construct the [AmphitheatreExporterProgress] screen.
+  const AmphitheatreExporterProgress({
+    required this.progress,
+    super.key,
+  });
+
+  @override
+  Widget build(final BuildContext context) => PopScope(
+        canPop: false,
+        child: Scaffold(
+          body: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Text(
+                  getLocalizationDelegate(context).exportingVideo(progress),
+                  style: TextStyle(
+                    color: Theme.of(context).primaryColor,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: 200,
+                  child: LinearProgressIndicator(
+                    value: progress,
+                    borderRadius: BorderRadius.circular(100),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       );
+
+  @override
+  void debugFillProperties(final DiagnosticPropertiesBuilder properties) {
+    super.debugFillProperties(properties);
+    properties.add(DoubleProperty('progress', progress));
+  }
 }
 
 enum _AmphitheatreEditorSliderDragMode {
@@ -280,6 +438,10 @@ class AmphitheatreEditorSlider extends StatefulWidget {
   /// The [controller] for the [Amphitheatre] player.
   final AmphitheatreController controller;
 
+  /// The [AmphitheatreEditorController], containing information about the
+  /// actions to be applied.
+  final AmphitheatreEditorController editorController;
+
   /// Editing options for the [AmphitheatreEditor].
   final AmphitheatreEditorOptions options;
 
@@ -292,6 +454,7 @@ class AmphitheatreEditorSlider extends StatefulWidget {
   /// Construct the [AmphitheatreEditorSlider].
   const AmphitheatreEditorSlider({
     required this.controller,
+    required this.editorController,
     required this.options,
     required this.style,
     this.height = 72,
@@ -308,6 +471,12 @@ class AmphitheatreEditorSlider extends StatefulWidget {
     properties
       ..add(
         DiagnosticsProperty<AmphitheatreController>('controller', controller),
+      )
+      ..add(
+        DiagnosticsProperty<AmphitheatreEditorController>(
+          'editorController',
+          editorController,
+        ),
       )
       ..add(DiagnosticsProperty<AmphitheatreEditorOptions>('options', options))
       ..add(DiagnosticsProperty<AmphitheatreEditorStyle>('style', style))
@@ -328,9 +497,6 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
   /// The offset at which the user started dragging.
   Offset? _dragLocalOffset;
 
-  Duration _cropStart = Duration.zero;
-  Duration _cropEnd = Duration.zero;
-
   Duration? _cachedCropStart;
   Duration? _cachedCropEnd;
 
@@ -340,10 +506,12 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
     unawaited(_loadImages());
 
     widget.controller.addListener(_didVideoLoad);
+    widget.editorController.addListener(_didEditVideo);
   }
 
   @override
   void dispose() {
+    widget.editorController.removeListener(_didEditVideo);
     widget.controller.removeListener(_didControllerUpdate);
     widget.controller.removeListener(_didVideoLoad);
     _cropStartIcon?.dispose();
@@ -356,11 +524,12 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
   /// A handler to be invoked once when the video loads. The handler will remove
   /// itself automatically once successfully invoked.
   void _didVideoLoad() {
-    if (widget.controller.isInitialized && _cropEnd == Duration.zero) {
+    if (widget.controller.isInitialized &&
+        widget.editorController.value.crop == null) {
       final (Duration initialStart, Duration initialEnd) =
           widget.options.getDefaultOffsets(widget.controller.duration);
-      _cropStart = initialStart;
-      _cropEnd = initialEnd;
+      widget.editorController
+          .crop(start: initialStart, end: initialEnd, irreversible: true);
 
       _ensurePlaybackWithinCropRegion();
       widget.controller.play();
@@ -370,22 +539,31 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
   }
 
   void _didControllerUpdate() {
-    if (widget.controller.isInitialized && _cropEnd != Duration.zero) {
+    if (widget.controller.isInitialized &&
+        widget.editorController.value.crop != null) {
       _ensurePlaybackWithinCropRegion();
     }
   }
 
+  void _didEditVideo() {
+    if (mounted) setState(() {});
+  }
+
   /// Ensures that the playback head always resides within the crop region.
   void _ensurePlaybackWithinCropRegion() {
+    final AmphitheatreEditorActionCrop? crop =
+        widget.editorController.value.crop;
+    if (crop == null) return;
+
     final bool isPlaying = widget.controller.isPlaying;
 
-    if (widget.controller.position < _cropStart) {
-      widget.controller.seekTo(_cropStart);
-    } else if (widget.controller.position > _cropEnd) {
+    if (widget.controller.position < crop.start) {
+      widget.controller.seekTo(crop.start);
+    } else if (widget.controller.position > crop.end) {
       if (isPlaying) {
-        widget.controller.seekTo(_cropStart);
+        widget.controller.seekTo(crop.start);
       } else {
-        widget.controller.seekTo(_cropEnd);
+        widget.controller.seekTo(crop.end);
       }
     }
   }
@@ -473,8 +651,8 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
       if (_dragMode == null) {
         _dragMode = computeDragMode(localPosition, size: size);
         _dragLocalOffset = localPosition;
-        _cachedCropStart = _cropStart;
-        _cachedCropEnd = _cropEnd;
+        _cachedCropStart = widget.editorController.value.crop?.start;
+        _cachedCropEnd = widget.editorController.value.crop?.end;
       }
     }
 
@@ -600,10 +778,7 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
       }
     }
 
-    setState(() {
-      _cropStart = cropStart;
-      _cropEnd = cropEnd;
-    });
+    widget.editorController.crop(start: cropStart, end: cropEnd);
   }
 
   void _handleNewPlayerPosition(
@@ -681,15 +856,20 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
                     value: widget.controller.position.inMilliseconds,
                     max: _max,
                   ),
-                  foregroundPainter: _AmphitheatreEditorSliderCropPainter(
-                    size: size,
-                    style: widget.style,
-                    cropStart: _cropStart.inMilliseconds,
-                    cropEnd: _cropEnd.inMilliseconds,
-                    max: _max,
-                    cropStartIcon: _cropStartIcon,
-                    cropEndIcon: _cropEndIcon,
-                  ),
+                  foregroundPainter:
+                      (widget.editorController.value.crop != null)
+                          ? _AmphitheatreEditorSliderCropPainter(
+                              size: size,
+                              style: widget.style,
+                              cropStart: widget.editorController.value.crop!
+                                  .start.inMilliseconds,
+                              cropEnd: widget.editorController.value.crop!.end
+                                  .inMilliseconds,
+                              max: _max,
+                              cropStartIcon: _cropStartIcon,
+                              cropEndIcon: _cropEndIcon,
+                            )
+                          : null,
                 ),
               );
             },
@@ -705,8 +885,8 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
         position,
         size: size,
         style: widget.style,
-        start: _cropStart.inMilliseconds,
-        end: _cropEnd.inMilliseconds,
+        cropStart: widget.editorController.value.crop!.start.inMilliseconds,
+        cropEnd: widget.editorController.value.crop!.end.inMilliseconds,
         max: widget.controller.duration.inMilliseconds,
       ) ??
       _AmphitheatreEditorSliderDragMode.playbackHead;
@@ -778,6 +958,13 @@ class _AmphitheatreEditorSliderPainter extends CustomPainter {
     canvas.drawRRect(borderRRect, borderPaint);
   }
 
+  /// Using the [style] to account for borders and other design elements, this
+  /// function computes the relative position on the [AmphitheatreEditorSlider]
+  /// for the [value].
+  ///
+  /// [max] is the maximum possible value (i.e., the duration of the video) and
+  /// this is used to interpolate the position relative to the [size] of the
+  /// [AmphitheatreEditorSlider].
   static double _valueToPosition({
     required final AmphitheatreEditorStyle style,
     required final int value,
@@ -835,20 +1022,31 @@ class _AmphitheatreEditorSliderCropPainter extends CustomPainter {
   bool shouldRepaint(final _AmphitheatreEditorSliderCropPainter old) =>
       old != this;
 
+  /// Compute the [_AmphitheatreEditorSliderDragMode] of a drag action at the
+  /// given [position]. The [style] is used to account for border thickness,
+  /// etc.,
+  ///
+  /// If [cropStart] and [cropEnd] are null (e.g., because the crop state has
+  /// not yet been initialized) this function always returns null to indicate
+  /// that a crop action should not be performed.
+  ///
+  /// See also: [_AmphitheatreEditorSliderPainter._valueToPosition].
   static _AmphitheatreEditorSliderDragMode? computeCropDragMode(
     final Offset position, {
     required final AmphitheatreEditorStyle style,
-    required final int start,
-    required final int end,
+    required final int? cropStart,
+    required final int? cropEnd,
     required final int max,
     required final Size size,
   }) {
+    if (cropStart == null || cropEnd == null) return null;
+
     final double cropHitboxWidth = style.borderThickness + style.cropHandleSize;
 
     final double startOffset =
         _AmphitheatreEditorSliderPainter._valueToPosition(
               style: style,
-              value: start,
+              value: cropStart,
               max: max,
               size: size,
             ) -
@@ -856,7 +1054,7 @@ class _AmphitheatreEditorSliderCropPainter extends CustomPainter {
 
     final double endOffset = _AmphitheatreEditorSliderPainter._valueToPosition(
           style: style,
-          value: end,
+          value: cropEnd,
           max: max,
           size: size,
         ) -
@@ -898,8 +1096,8 @@ class _AmphitheatreEditorSliderCropPainter extends CustomPainter {
     final _AmphitheatreEditorSliderDragMode? cropDragMode = computeCropDragMode(
       position,
       style: style,
-      start: cropStart,
-      end: cropEnd,
+      cropStart: cropStart,
+      cropEnd: cropEnd,
       max: max,
       size: size,
     );

@@ -94,11 +94,23 @@ abstract class AmphitheatreLocalizations {
     Locale('en')
   ];
 
-  /// Label for the close button.
+  /// Label for the cancel button. This replaces the close button in the editor.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get cancel;
+
+  /// Label for the close button. Shown in the top-left of the video player and editor.
   ///
   /// In en, this message translates to:
   /// **'Close'**
   String get close;
+
+  /// Label for the done button. Shown in the top-right of the video editor, used to confirm the crop.
+  ///
+  /// In en, this message translates to:
+  /// **'Done'**
+  String get done;
 
   /// Label for the button that skips backwards in the video, by 10 seconds.
   ///
@@ -129,6 +141,12 @@ abstract class AmphitheatreLocalizations {
   /// In en, this message translates to:
   /// **'Replay'**
   String get replay;
+
+  /// Label indicating the progress when exporting a video with percentage progress.
+  ///
+  /// In en, this message translates to:
+  /// **'Exporting video ({progress})...'**
+  String exportingVideo(double progress);
 }
 
 class _AmphitheatreLocalizationsDelegate extends LocalizationsDelegate<AmphitheatreLocalizations> {
