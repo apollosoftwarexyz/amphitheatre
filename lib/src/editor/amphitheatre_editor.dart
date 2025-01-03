@@ -353,9 +353,8 @@ class _AmphitheatreEditorState extends State<AmphitheatreEditor> {
           editorController,
         ),
       )
-      ..add(DiagnosticsProperty<bool>('exporting', exporting));
-    properties
-        .add(DiagnosticsProperty<bool>('canAcceptChanges', canAcceptChanges));
+      ..add(DiagnosticsProperty<bool>('exporting', exporting))
+      ..add(DiagnosticsProperty<bool>('canAcceptChanges', canAcceptChanges));
   }
 }
 

@@ -1,19 +1,17 @@
 package xyz.apollosoftware.amphitheatre
 
 import android.app.Activity
-import android.content.ContextWrapper
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
-import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.BeforeEach
-import kotlin.test.Test
 import org.mockito.Mockito
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.stubbing.OngoingStubbing
 import java.io.File
+import kotlin.test.Test
 
 internal class AmphitheatrePluginTest {
   private lateinit var plugin: AmphitheatrePlugin

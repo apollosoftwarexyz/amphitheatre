@@ -1,14 +1,8 @@
 package xyz.apollosoftware.amphitheatre
 
 import android.app.Activity
-import android.media.MediaCodec
-import android.media.MediaCodec.BUFFER_FLAG_CODEC_CONFIG
-import android.media.MediaCodec.BUFFER_FLAG_KEY_FRAME
-import android.media.MediaCodec.BUFFER_FLAG_PARTIAL_FRAME
 import android.media.MediaCodec.BufferInfo
 import android.media.MediaExtractor
-import android.media.MediaExtractor.SAMPLE_FLAG_PARTIAL_FRAME
-import android.media.MediaExtractor.SAMPLE_FLAG_SYNC
 import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.media.MediaMuxer
