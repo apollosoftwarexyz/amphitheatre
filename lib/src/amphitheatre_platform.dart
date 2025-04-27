@@ -54,9 +54,11 @@ abstract class AmphitheatrePlatform extends PlatformInterface {
   /// videos that are being processed.
   Future<String> getTemporaryDirectory() => throw UnimplementedError();
 
-  /// Crop the video **in-place** at the [path] to start at [start] milliseconds
-  /// from the start of the original video and similarly end at [end]
-  /// milliseconds.
+  /// Crop the video at the [path] to start at [start] milliseconds from the
+  /// start of the original video and similarly end at [end] milliseconds.
+  ///
+  /// The path to the file containing the output of the crop operation is
+  /// returned and the original video is deleted.
   Future<String> cropVideo({
     required final String path,
     required final int start,

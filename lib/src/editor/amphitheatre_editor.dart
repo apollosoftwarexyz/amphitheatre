@@ -214,16 +214,32 @@ class AmphitheatreEditor extends StatefulWidget {
   /// Launches the [AmphitheatreEditor] with the given controller, consuming the
   /// controller. See [AmphitheatreEditor.consume].
   ///
+  /// Various [AmphitheatreEditorOptions] can be supplied by supplying
+  /// [options]. If these are not specified, default values are used instead.
+  ///
+  /// If you require further customization, such as the ability to supply custom
+  /// widgets for buttons, etc., then you should directly use the
+  /// [AmphitheatreEditor.consume] API instead (which consumes an
+  /// [AmphitheatreController]) - this function is simply a wrapper around that
+  /// API.
+  ///
   /// When the [AmphitheatreEditor] pops, it either pops with null (if no
   /// changes were made), or it pops with the path to the modified video.
   static Future<String?> launch(
     final BuildContext context, {
     required final AmphitheatreController controller,
+    final AmphitheatreEditorOptions options = const AmphitheatreEditorOptions(),
     final AmphitheatreEditorRouteBuilder routeBuilder =
         _defaultAmphitheatreEditorRouteBuilder,
+    final bool useRootNavigator = false,
   }) async {
-    final Widget child = AmphitheatreEditor.consume(controller: controller);
-    return Navigator.of(context).push<String?>(routeBuilder(child));
+    final Widget child = AmphitheatreEditor.consume(
+      controller: controller,
+      options: options,
+    );
+
+    return Navigator.of(context, rootNavigator: useRootNavigator)
+        .push<String?>(routeBuilder(child));
   }
 
   @override

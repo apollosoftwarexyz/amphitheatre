@@ -166,14 +166,33 @@ class Amphitheatre extends StatefulWidget {
 
   /// Launches the [Amphitheatre] with the given controller, consuming the
   /// controller. See [Amphitheatre.consume].
+  ///
+  /// If you require further customization, such as the ability to supply custom
+  /// widgets for buttons, etc., then you should directly use the
+  /// [Amphitheatre.consume] API instead (which consumes an
+  /// [AmphitheatreController]) - this function is simply a wrapper around that
+  /// API.
   static void launch(
     final BuildContext context, {
     required final AmphitheatreController controller,
     final AmphitheatreRouteBuilder routeBuilder =
         _defaultAmphitheatreRouteBuilder,
+    final bool useRootNavigator = false,
+    final bool enableToggleControls = true,
+    final bool enableReplayButton = true,
+    final bool autoPlay = true,
   }) {
-    final Widget child = Amphitheatre.consume(controller: controller);
-    unawaited(Navigator.of(context).push(routeBuilder(child)));
+    final Widget child = Amphitheatre.consume(
+      controller: controller,
+      enableToggleControls: enableToggleControls,
+      enableReplayButton: enableReplayButton,
+      autoPlay: autoPlay,
+    );
+
+    unawaited(
+      Navigator.of(context, rootNavigator: useRootNavigator)
+          .push(routeBuilder(child)),
+    );
   }
 
   @override
@@ -246,10 +265,10 @@ class _AmphitheatreState extends State<Amphitheatre> {
       widget.controller.initialize(autoPlay: widget.autoPlay);
     } else {
       if (widget.controller.isPlaying != widget.autoPlay) {
-        if (widget.controller.isPlaying) {
-          widget.controller.pause();
-        } else {
+        if (widget.autoPlay) {
           widget.controller.play();
+        } else {
+          widget.controller.pause();
         }
       }
     }

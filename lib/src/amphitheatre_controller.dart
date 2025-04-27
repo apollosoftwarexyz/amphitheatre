@@ -127,9 +127,10 @@ class AmphitheatreController with ChangeNotifier {
 
     controller.addListener(_onControllerUpdate);
     unawaited(controller.setLooping(looping));
-    unawaited(controller.initialize());
 
-    if (autoPlay) play();
+    controller.initialize().then((_) {
+        if (autoPlay) play();
+    });
   }
 
   /// Instruct the [controller] to start playing the video.
