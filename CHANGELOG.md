@@ -1,3 +1,7 @@
+## 0.0.3
+
+* Allow customizing the playback controls in the editor.
+
 ## 0.0.2
 
 * [Video Limit #1](https://github.com/apollosoftwarexyz/amphitheatre/issues/1) Add basic options to

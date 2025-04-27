@@ -91,9 +91,11 @@ class Amphitheatre extends StatefulWidget {
   /// of the screen when the controls are not hidden.
   final AmphitheatreComponentBuilder buildProgressSlider;
 
+  /// {@template amphitheatre_build_video_controls}
   /// Builder for the video controls (e.g., skip back, play/pause, skip
   /// forward). This button shows in the bottom third of the screen when the
   /// controls are not hidden.
+  /// {@endtemplate}
   final AmphitheatreComponentBuilder buildVideoControls;
 
   /// Builder for the video information. This shows underneath the video

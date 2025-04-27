@@ -170,6 +170,12 @@ typedef AmphitheatreEditorRouteBuilder = Route<String?> Function(Widget child);
 Route<String?> _defaultAmphitheatreEditorRouteBuilder(final Widget child) =>
     MaterialPageRoute<String?>(builder: (final _) => child);
 
+Widget _buildVideoControls(
+  final AmphitheatreController controller,
+  final bool showControls,
+) =>
+    AmphitheatreVideoControls(controller: controller);
+
 /// A builder that returns a [Scaffold], rendered when the [AmphitheatreEditor]
 /// is exporting the new video.
 typedef AmphitheatreExporterProgressBuilder = Widget Function({
@@ -187,6 +193,9 @@ class AmphitheatreEditor extends StatefulWidget {
   /// Styling options for the [AmphitheatreEditor].
   final AmphitheatreEditorStyle style;
 
+  /// {@macro amphitheatre_build_video_controls}
+  final AmphitheatreComponentBuilder buildVideoControls;
+
   /// The exporter progress screen builder.
   final AmphitheatreExporterProgressBuilder buildExporterProgress;
 
@@ -198,6 +207,7 @@ class AmphitheatreEditor extends StatefulWidget {
     required this.controller,
     this.style = const AmphitheatreEditorStyle(),
     this.options = const AmphitheatreEditorOptions(),
+    this.buildVideoControls = _buildVideoControls,
     this.buildExporterProgress = _buildAmphitheatreExporterProgress,
     super.key,
   }) : consumedController = false;
@@ -207,6 +217,7 @@ class AmphitheatreEditor extends StatefulWidget {
     required this.controller,
     this.style = const AmphitheatreEditorStyle(),
     this.options = const AmphitheatreEditorOptions(),
+    this.buildVideoControls = _buildVideoControls,
     this.buildExporterProgress = _buildAmphitheatreExporterProgress,
     super.key,
   }) : consumedController = true;
@@ -254,6 +265,12 @@ class AmphitheatreEditor extends StatefulWidget {
       )
       ..add(DiagnosticsProperty<AmphitheatreEditorStyle>('style', style))
       ..add(DiagnosticsProperty<AmphitheatreEditorOptions>('options', options))
+      ..add(
+        ObjectFlagProperty<AmphitheatreComponentBuilder>.has(
+          'buildVideoControls',
+          buildVideoControls,
+        ),
+      )
       ..add(
         ObjectFlagProperty<AmphitheatreExporterProgressBuilder>.has(
           'buildExporterProgress',
@@ -341,6 +358,7 @@ class _AmphitheatreEditorState extends State<AmphitheatreEditor> {
       autoPlay: false,
       buildCloseButton: (final controller, final _) =>
           AmphitheatreCancelButton(controller: controller),
+      buildVideoControls: widget.buildVideoControls,
       buildDoneButton: (final controller, final _) => AmphitheatreDoneButton(
         controller: controller,
         onPressed: canAcceptChanges
