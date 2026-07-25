@@ -31,6 +31,10 @@
     "@replay": {
         "description": "Label for the button that replays the video."
     },
+    "preparingToExportVideo": "Preparing to export video...",
+    "@preparingToExportVideo": {
+        "description": "Label indicating that the video is about to start exporting."
+    },
     "exportingVideo": "Exporting video ({progress})...",
     "@exportingVideo": {
         "description": "Label indicating the progress when exporting a video with percentage progress.",

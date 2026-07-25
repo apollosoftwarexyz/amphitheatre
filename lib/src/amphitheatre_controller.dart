@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:amphitheatre/src/amphitheatre.dart';
+import 'package:amphitheatre/src/amphitheatre_platform.dart'
+    show AmphitheatrePlatform, getAmphitheatrePlatform;
 import 'package:amphitheatre/src/editor/amphitheatre_editor.dart';
 import 'package:amphitheatre/src/utils.dart';
 import 'package:cross_file/cross_file.dart';
@@ -128,9 +130,11 @@ class AmphitheatreController with ChangeNotifier {
     controller.addListener(_onControllerUpdate);
     unawaited(controller.setLooping(looping));
 
-    controller.initialize().then((_) {
+    unawaited(
+      controller.initialize().then((final _) {
         if (autoPlay) play();
-    });
+      }),
+    );
   }
 
   /// Instruct the [controller] to start playing the video.
@@ -169,6 +173,43 @@ class AmphitheatreController with ChangeNotifier {
     // As everything is now disposed, mark that the controller can be
     // re-initialized if desired.
     _initialized = false;
+  }
+
+  /// Fetch the path for the video from the underlying controller (e.g., so it
+  /// can be used by the [AmphitheatreEditor]).
+  ///
+  /// The controller must have been initialized (see [initialize]), or this
+  /// function throws an error.
+  ///
+  /// If [temporaryFileFallback] is false, this currently only supports
+  /// [DataSourceType.file]. When the fallback is true, this method calls
+  /// [getVideo] to buffer the data into a temporary file and returns the path
+  /// to the temporary file instead.
+  ///
+  /// The returned [AmphitheatreVideoPath] specifies a normalized file path with
+  /// an indication of whether the temporary fallback described above was used.
+  Future<AmphitheatreVideoPath> getVideoPath({
+    final bool temporaryFileFallback = true,
+  }) async {
+    if (!controller.value.isInitialized) {
+      throw StateError('The controller has not been initialized yet.');
+    }
+
+    if (controller.dataSourceType == DataSourceType.file) {
+      return AmphitheatreVideoPath(
+        path: Uri.parse(controller.dataSource).normalizePath().path,
+        isTemporary: false,
+      );
+    }
+
+    final AmphitheatrePlatform platform = getAmphitheatrePlatform();
+    final String tempDir = await platform.getTemporaryDirectory();
+
+    final AmphitheatreVideo video = await getVideo();
+    final inputFile = XFile.fromData(video.data);
+    final String inputFilePath = platform.joinPath(tempDir, video.name);
+    await inputFile.saveTo(inputFilePath);
+    return AmphitheatreVideoPath(path: inputFilePath, isTemporary: true);
   }
 
   /// Fetch the data for the video from the underlying controller (e.g., so it
@@ -226,6 +267,37 @@ class AmphitheatreController with ChangeNotifier {
       data: data,
       duration: duration,
     );
+  }
+}
+
+/// A path to a video being displayed by [Amphitheatre].
+///
+/// For details, see [AmphitheatreController.getVideoPath].
+@immutable
+final class AmphitheatreVideoPath {
+  /// The path to the video file.
+  final String path;
+
+  /// If the video data had to be buffered into a temporary file (to return a
+  /// valid path), this is true. Otherwise, if the video path could be used
+  /// directly (e.g., because the video was already specified from a file path),
+  /// this is false.
+  ///
+  /// This can be used to determine whether to clean up the file after usage.
+  final bool isTemporary;
+
+  /// Construct an [AmphitheatreVideoPath].
+  const AmphitheatreVideoPath({
+    required this.path,
+    required this.isTemporary,
+  });
+
+  /// If the [AmphitheatreVideoPath] is a temporary file ([isTemporary]), this
+  /// will delete the file.
+  Future<void> deleteIfTemporary() async {
+    if (isTemporary) {
+      await getAmphitheatrePlatform().deleteFile(path);
+    }
   }
 }
 

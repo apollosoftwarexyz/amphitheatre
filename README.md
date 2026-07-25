@@ -53,6 +53,8 @@ the platform channel implementation.</small>
 First, refer to [Setup for the `video_player` package](https://pub.dev/packages/video_player#setup) to ensure the media
 can be played from your desired source.
 
+Ensure the Amphitheatre Platform Interface has initialized (and ensure )
+
 Then, construct an `Amphitheatre`. For convenience, you can use the `Amphitheatre.launch` function to simply launch a
 new screen with the player:
 

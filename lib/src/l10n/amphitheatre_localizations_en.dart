@@ -1,7 +1,7 @@
 /// Automatically generated localizations for Amphitheatre.
 
+// ignore: unused_import
 import 'package:intl/intl.dart' as intl;
-
 import 'amphitheatre_localizations.dart';
 
 // ignore_for_file: type=lint
@@ -35,11 +35,13 @@ class AmphitheatreLocalizationsEn extends AmphitheatreLocalizations {
   String get replay => 'Replay';
 
   @override
+  String get preparingToExportVideo => 'Preparing to export video...';
+
+  @override
   String exportingVideo(double progress) {
-    final intl.NumberFormat progressNumberFormat = intl.NumberFormat.decimalPercentPattern(
-      locale: localeName,
-      decimalDigits: 1
-    );
+    final intl.NumberFormat progressNumberFormat =
+        intl.NumberFormat.decimalPercentPattern(
+            locale: localeName, decimalDigits: 1);
     final String progressString = progressNumberFormat.format(progress);
 
     return 'Exporting video ($progressString)...';

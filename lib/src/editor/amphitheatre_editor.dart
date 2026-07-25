@@ -9,7 +9,6 @@ import 'package:amphitheatre/amphitheatre.dart';
 import 'package:amphitheatre/src/amphitheatre_platform.dart';
 import 'package:amphitheatre/src/raw_asset_image.dart';
 import 'package:amphitheatre/src/utils.dart';
-import 'package:cross_file/cross_file.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -178,8 +177,12 @@ Widget _buildVideoControls(
 
 /// A builder that returns a [Scaffold], rendered when the [AmphitheatreEditor]
 /// is exporting the new video.
+///
+/// If the progress is null, the exporter progress indicator should be
+/// indeterminate. Otherwise, the progress contains the latest progress reported
+/// by the [AmphitheatrePlatform].
 typedef AmphitheatreExporterProgressBuilder = Widget Function({
-  required double progress,
+  required double? progress,
 });
 
 /// The Amphitheatre video editor.
@@ -285,9 +288,18 @@ class AmphitheatreEditor extends StatefulWidget {
 
 class _AmphitheatreEditorState extends State<AmphitheatreEditor> {
   bool _exporting = false;
+  StreamSubscription<AmphitheatreCropVideoStatus>? _exportStatusStream;
+
+  double? _progress;
 
   /// When the video is exporting.
   bool get exporting => _exporting;
+
+  /// The progress of the video export operation.
+  ///
+  /// If no status events have been received yet (i.e., the export is preparing)
+  /// this is null.
+  double? get progress => _progress;
 
   late final _amphitheatre =
       widget.consumedController ? Amphitheatre.consume : Amphitheatre.new;
@@ -303,6 +315,8 @@ class _AmphitheatreEditorState extends State<AmphitheatreEditor> {
 
   @override
   void dispose() {
+    print('dispose');
+    unawaited(_exportStatusStream?.cancel());
     editorController.dispose();
     super.dispose();
   }
@@ -319,27 +333,36 @@ class _AmphitheatreEditorState extends State<AmphitheatreEditor> {
       _exporting = true;
     });
 
-    final AmphitheatrePlatform platform = getAmphitheatrePlatform();
-    final String tempDir = await platform.getTemporaryDirectory();
-
-    // Extract the video data and save it into a file in the Amphitheatre
-    // temporary directory.
-    final AmphitheatreVideo video = await widget.controller.getVideo();
-    final inputFile = XFile.fromData(video.data);
-    final String inputFilePath = platform.joinPath(tempDir, video.name);
-    await inputFile.saveTo(inputFilePath);
+    // Get the path to the video.
+    final AmphitheatreVideoPath inputFilePath =
+        await widget.controller.getVideoPath();
 
     // Now step through each of the modifications (currently, just a crop).
     final AmphitheatreEditorActionCrop? crop = editorController.value.crop;
-    var outputFilePath = inputFilePath;
+    String outputFilePath = inputFilePath.path;
 
     if (crop != null &&
-        (crop.start > Duration.zero || crop.end < video.duration)) {
-      outputFilePath = await getAmphitheatrePlatform().cropVideo(
-        path: inputFilePath,
-        start: crop.start.inMilliseconds,
-        end: crop.end.inMilliseconds,
-      );
+        (crop.start > Duration.zero || crop.end < widget.controller.duration)) {
+      try {
+        final AmphitheatreCropVideoSession session =
+            await getAmphitheatrePlatform().cropVideo(
+          path: inputFilePath.path,
+          start: crop.start.inMilliseconds,
+          end: crop.end.inMilliseconds,
+        );
+
+        _exportStatusStream = session.status.listen((final status) {
+          if (mounted) {
+            setState(() {
+              _progress = status.progress;
+            });
+          }
+        });
+
+        outputFilePath = await session.future;
+      } finally {
+        await inputFilePath.deleteIfTemporary();
+      }
     }
 
     Navigator.of(context).pop(outputFilePath);
@@ -348,7 +371,7 @@ class _AmphitheatreEditorState extends State<AmphitheatreEditor> {
   @override
   Widget build(final BuildContext context) {
     if (_exporting) {
-      return widget.buildExporterProgress(progress: 0);
+      return widget.buildExporterProgress(progress: progress);
     }
 
     return _amphitheatre(
@@ -388,17 +411,18 @@ class _AmphitheatreEditorState extends State<AmphitheatreEditor> {
         ),
       )
       ..add(DiagnosticsProperty<bool>('exporting', exporting))
+      ..add(DiagnosticsProperty<double>('progress', progress))
       ..add(DiagnosticsProperty<bool>('canAcceptChanges', canAcceptChanges));
   }
 }
 
-Widget _buildAmphitheatreExporterProgress({required final double progress}) =>
+Widget _buildAmphitheatreExporterProgress({required final double? progress}) =>
     AmphitheatreExporterProgress(progress: progress);
 
 /// The default exporter progress screen for the [AmphitheatreEditor].
 class AmphitheatreExporterProgress extends StatelessWidget {
   /// The progress of the export job.
-  final double progress;
+  final double? progress;
 
   /// Construct the [AmphitheatreExporterProgress] screen.
   const AmphitheatreExporterProgress({
@@ -410,31 +434,63 @@ class AmphitheatreExporterProgress extends StatelessWidget {
   Widget build(final BuildContext context) => PopScope(
         canPop: false,
         child: Scaffold(
-          body: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Text(
-                  getLocalizationDelegate(context).exportingVideo(progress),
-                  style: TextStyle(
-                    color: Theme.of(context).primaryColor,
-                    fontWeight: FontWeight.bold,
+          body: AnnotatedRegion<SystemUiOverlayStyle>(
+            value: _getSystemUiOverlayStyle(Theme.of(context)),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Text(
+                    progress != null
+                        ? getLocalizationDelegate(context)
+                            .exportingVideo(progress!)
+                        : getLocalizationDelegate(context)
+                            .preparingToExportVideo,
+                    style: TextStyle(
+                      color: Theme.of(context).primaryColor,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 10),
-                SizedBox(
-                  width: 200,
-                  child: LinearProgressIndicator(
-                    value: progress,
-                    borderRadius: BorderRadius.circular(100),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: 200,
+                    child: LinearProgressIndicator(
+                      value: progress,
+                      borderRadius: BorderRadius.circular(100),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
       );
+
+  /// Get the System UI overlay style from the theme, or a reasonable fallback.
+  ///
+  /// This aims to recreate the [AppBar] logic, without requiring an unnecessary
+  /// or invisible [AppBar].
+  static SystemUiOverlayStyle _getSystemUiOverlayStyle(final ThemeData theme) {
+    final SystemUiOverlayStyle? systemUiOverlayStyle =
+        theme.appBarTheme.systemOverlayStyle;
+    if (systemUiOverlayStyle != null) {
+      return systemUiOverlayStyle;
+    }
+
+    final SystemUiOverlayStyle fallbackStyle =
+        theme.brightness == Brightness.dark
+            ? SystemUiOverlayStyle.light
+            : SystemUiOverlayStyle.dark;
+
+    return SystemUiOverlayStyle(
+      statusBarColor: theme.scaffoldBackgroundColor,
+      statusBarBrightness: fallbackStyle.statusBarBrightness,
+      statusBarIconBrightness: fallbackStyle.statusBarIconBrightness,
+      systemStatusBarContrastEnforced:
+          fallbackStyle.systemStatusBarContrastEnforced,
+    );
+  }
 
   @override
   void debugFillProperties(final DiagnosticPropertiesBuilder properties) {

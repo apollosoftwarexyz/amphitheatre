@@ -1,6 +1,43 @@
+import 'dart:convert' show base64;
+import 'dart:math' show Random;
+import 'dart:typed_data';
+
 import 'package:amphitheatre/src/l10n/amphitheatre_localizations.dart';
 import 'package:amphitheatre/src/l10n/amphitheatre_localizations_en.dart';
 import 'package:flutter/widgets.dart';
+
+/// Get the most secure form of random available.
+///
+/// If [permitFallback] is true and [Random.secure] is not available (or
+/// supported), this falls back to ordinary non-CS PRNG. Otherwise, this
+/// acquires [Random.secure] and preserves the normal behavior of throwing if it
+/// is not supported.
+Random getRandom({final bool permitFallback = true}) {
+  try {
+    return Random.secure();
+  } on UnsupportedError catch (_) {
+    if (permitFallback) {
+      return Random();
+    }
+
+    rethrow;
+  }
+}
+
+/// Byte array extensions for [Random].
+extension RandomBytes on Random {
+  /// Generates a [Uint8List] of bytes of the specified length.
+  Uint8List nextBytes(final int length) {
+    final result = Uint8List(length);
+    for (var i = 0; i < length; i++) {
+      result[i] = nextInt(256);
+    }
+    return result;
+  }
+
+  /// Generates a base64 string, from bytes of the given length.
+  String nextString(final int length) => base64.encode(nextBytes(length));
+}
 
 /// Formatting extensions for [Duration]s.
 extension FormatDuration on Duration {
