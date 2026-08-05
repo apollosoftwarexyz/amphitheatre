@@ -19,7 +19,7 @@ import io.flutter.plugin.common.MethodChannel.Result
 import java.io.File
 import java.io.IOException
 import java.nio.ByteBuffer
-import kotlin.math.min
+import kotlin.math.max
 
 const val kChannelName = "xyz.apollosoftware.amphitheatre"
 
@@ -104,7 +104,7 @@ class AmphitheatrePlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
               // ensure it is used for the muxer buffer size. (Otherwise, we can just default to
               // a reasonable size).
               if (format.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
-                bufferSize = min(format.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE), bufferSize)
+                bufferSize = max(format.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE), bufferSize)
               }
             }
           }

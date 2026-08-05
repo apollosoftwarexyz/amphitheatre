@@ -1,3 +1,13 @@
+## 0.0.4
+
+* Add history management functions to `AmphitheatreEditorController`.
+  * `undo`
+  * `redo`
+  * `clearHistory`
+  * `reset`
+* Rename `AmphitheatreEditorOptions.strict` to `AmphitheatreEditorOptions.canAutoAccept`.
+* Bump dependencies
+
 ## 0.0.3
 
 * Allow customizing the playback controls in the editor.

@@ -30,7 +30,7 @@ final class AmphitheatreEditorActionCrop extends AmphitheatreEditorAction {
 
   /// Construct an [AmphitheatreEditorActionCrop].
   const AmphitheatreEditorActionCrop({required this.start, required this.end})
-      : assert(end > start, 'end cannot precede start');
+      : assert(end > start, 'end cannot precede or equal start');
 
   @override
   Map<String, int> toJson() =>
@@ -52,36 +52,53 @@ final class AmphitheatreEditorActionCrop extends AmphitheatreEditorAction {
 final class AmphitheatreEditorController with ChangeNotifier {
   AmphitheatreEditorModifications _value =
       const AmphitheatreEditorModifications.empty();
+  
+  /// The maximum number of history items to retain.
+  static const kMaxHistoryLength = 32;
 
-  final Queue<AmphitheatreEditorModifications> _history = Queue();
+  /// The stack of history items.
+  final MaxSizeStack<AmphitheatreEditorModifications> _history = MaxSizeStack(kMaxHistoryLength);
+
+  /// The stack of 'redo' history items.
+  /// 
+  /// When history items are undone with [undo], the latest modifications are
+  /// written here.
+  final MaxSizeStack<AmphitheatreEditorModifications> _future = MaxSizeStack(kMaxHistoryLength);
 
   /// The current set of editor modifications.
   AmphitheatreEditorModifications get value => _value;
 
-  /// Check whether a modification has been applied to the video.
-  bool get hasModification => _history.isNotEmpty;
+  /// Whether a modification has been applied to the video.
+  bool get hasModification => value.isNotEmpty;
+
+  /// Whether there are history items (i.e., whether [undo] can be performed).
+  bool get hasUndo => _history.isNotEmpty;
+
+  /// Whether there are redo items (i.e., wehether [redo] can be performed).
+  bool get hasRedo => _future.isNotEmpty;
 
   /// If [value] is different to [_value], applies the new [value] in its place,
   /// moving the old value to the end of the [_history] queue.
-  ///
-  /// When [irreversible] is true, the entry is not added to the history. If
-  /// there are already history items, a [StateError] is thrown because the
-  /// intention would be ambiguous
+  /// 
+  /// If [writeHistory] is true, the action is written to the history stack.
+  /// This allows a user to undo the action. This is not done automatically to
+  /// avoid writing unnecessary or excessive history items.
   void _applyNewValue(
     final AmphitheatreEditorModifications value, {
-    final bool irreversible = false,
+    required final bool writeHistory,
   }) {
-    if (_value != value) {
-      if (!irreversible) {
-        _history.add(_value);
-      } else if (_history.isNotEmpty) {
-        throw StateError(
-          'Cannot perform an irreversible action when there are existing modifications.',
-        );
-      }
-      _value = value;
+    if (_value == value) {
+      notifyListeners();
+      return;
     }
 
+    _future.clear();
+    if (writeHistory) {
+      // Push the new history entry onto the stack.
+      _history.push(_value);
+    }
+
+    _value = value;
     notifyListeners();
   }
 
@@ -91,14 +108,54 @@ final class AmphitheatreEditorController with ChangeNotifier {
   void crop({
     required final Duration start,
     required final Duration end,
-    final bool irreversible = false,
+    final bool writeHistory = true,
   }) =>
       _applyNewValue(
         value.copyWith(
           crop: AmphitheatreEditorActionCrop(start: start, end: end),
         ),
-        irreversible: irreversible,
+        writeHistory: writeHistory,
       );
+  
+  /// Undo the last edit.
+  void undo() {
+    if (_history.isNotEmpty) {
+      _future.push(_value);
+      _value = _history.pop();
+      notifyListeners();
+    }
+  }
+
+  /// Redo the last edit.
+  void redo() {
+    if (_future.isNotEmpty) {
+      _history.push(_value);
+      _value = _future.pop();
+      notifyListeners();
+    }
+  }
+
+  /// Clear the history stack.
+  /// 
+  /// Note that this just clears the metadata about the changes preventing them
+  /// from being undone with [undo] or redone with [redo]. This does not clear
+  /// the changes themselves.
+  /// 
+  /// To clear the modifications too, use [reset] instead.
+  void clearHistory() {
+    _history.clear();
+    _future.clear();
+    notifyListeners();
+  }
+
+  /// Reset all modifications.
+  /// 
+  /// Unlike [clearHistory], this clears the history and all modifications to
+  /// the video.
+  void reset() {
+    _value = const AmphitheatreEditorModifications.empty();
+    clearHistory();
+  }
 }
 
 /// The set of modifications to be applied to a video.

@@ -202,6 +202,10 @@ class AmphitheatreController with ChangeNotifier {
       );
     }
 
+    if (!temporaryFileFallback) {
+      throw UnsupportedError('Data source does not have a natively supported path and temporaryFileFallback is false.');
+    }
+
     final AmphitheatrePlatform platform = getAmphitheatrePlatform();
     final String tempDir = await platform.getTemporaryDirectory();
 

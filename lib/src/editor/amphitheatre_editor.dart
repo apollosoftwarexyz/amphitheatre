@@ -7,6 +7,7 @@ import 'dart:ui' as ui
 
 import 'package:amphitheatre/amphitheatre.dart';
 import 'package:amphitheatre/src/amphitheatre_platform.dart';
+import 'package:amphitheatre/src/max_size_stack.dart';
 import 'package:amphitheatre/src/raw_asset_image.dart';
 import 'package:amphitheatre/src/utils.dart';
 import 'package:flutter/foundation.dart';
@@ -19,17 +20,23 @@ part 'amphitheatre_editor_controller.dart';
 /// Editing options for the [AmphitheatreEditor].
 @immutable
 final class AmphitheatreEditorOptions {
-  /// Whether to strictly require that videos conform to the specified
-  /// [minLength] and [maxLength]. If the video can never conform to the
-  /// constraints (i.e., it is too short), the video will be automatically
-  /// accepted when [strict] is true.
-  ///
-  /// See [minLength].
-  final bool strict;
+  /// Whether to auto-accept videos that are too short (less than [minLength]).
+  /// 
+  /// If the video is too long (i.e., its duration is greater than
+  /// [maxLength]), the editor is used to prompt the user to crop the video
+  /// down to size.
+  /// 
+  /// If the video is too short, the video will be automatically accepted when
+  /// [canAutoAccept] is true.
+  /// 
+  /// To automatically reject videos, applications should intercept the video
+  /// before it is passed to the [AmphitheatreEditor] - this provides greater
+  /// flexibility in how applications handle invalid videos.
+  final bool canAutoAccept;
 
   /// The minimum length to allow the video can be cropped to. If not set to
   /// zero and the video is less than or equal to the [minLength], the video
-  /// will be automatically accepted unless [strict] is true.
+  /// will be automatically accepted unless [canAutoAccept] is true.
   final Duration minLength;
 
   /// The maximum length to allow the video to be.
@@ -39,13 +46,14 @@ final class AmphitheatreEditorOptions {
   const AmphitheatreEditorOptions({
     this.minLength = const Duration(seconds: 10),
     this.maxLength = const Duration(minutes: 5),
-    this.strict = false,
+    this.canAutoAccept = false,
   });
 
-  /// Whether [strict] and the constraints [minLength] and [maxLength] indicate
-  /// that the video with the given [duration] should be automatically accepted.
+  /// If [canAutoAccept] is true and the video is shorter than [minLength] in
+  /// duration (or both are zero), this method returns true to indicate that
+  /// the video should be automatically accepted.
   bool shouldAutoAccept(final Duration duration) =>
-      strict && duration <= minLength;
+      canAutoAccept && ((duration < minLength) || (duration == Duration.zero && minLength == Duration.zero));
 
   /// Returns the default start and end offsets for cropping. The offsets are
   /// based on computing the maximum length that can surround the middle of the
@@ -315,7 +323,6 @@ class _AmphitheatreEditorState extends State<AmphitheatreEditor> {
 
   @override
   void dispose() {
-    print('dispose');
     unawaited(_exportStatusStream?.cancel());
     editorController.dispose();
     super.dispose();
@@ -618,7 +625,8 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
       final (Duration initialStart, Duration initialEnd) =
           widget.options.getDefaultOffsets(widget.controller.duration);
       widget.editorController
-          .crop(start: initialStart, end: initialEnd, irreversible: true);
+          .crop(start: initialStart, end: initialEnd, writeHistory: false);
+      widget.editorController.clearHistory();
 
       _ensurePlaybackWithinCropRegion();
       widget.controller.play();
@@ -766,6 +774,10 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
         dragMode: _dragMode!,
         localPosition: localPosition,
         localOrigin: _dragLocalOffset!,
+
+        // Only write history at the end of the drag as this is the moment
+        // where the edit is 'locked in'.
+        writeHistory: isEnd,
       );
     }
 
@@ -782,6 +794,7 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
     required final _AmphitheatreEditorSliderDragMode dragMode,
     required final Offset localPosition,
     required final Offset localOrigin,
+    required final bool writeHistory,
   }) {
     final Duration duration = widget.controller.duration;
     final int durationMilliseconds = duration.inMilliseconds;
@@ -867,7 +880,11 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
       }
     }
 
-    widget.editorController.crop(start: cropStart, end: cropEnd);
+    widget.editorController.crop(
+      start: cropStart,
+      end: cropEnd,
+      writeHistory: writeHistory,
+    );
   }
 
   void _handleNewPlayerPosition(
