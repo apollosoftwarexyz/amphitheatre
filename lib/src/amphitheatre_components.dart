@@ -67,7 +67,7 @@ sealed class _AmphitheatreAnimatedOpacityIconButton extends StatelessWidget {
   // -- BEGIN: TO OVERRIDE
 
   /// The tooltip to display when the button is held.
-  String _getTooltip(final BuildContext context);
+  String _getTooltip(BuildContext context);
 
   /// The icon to display on the button.
   Widget get _icon;
@@ -77,7 +77,7 @@ sealed class _AmphitheatreAnimatedOpacityIconButton extends StatelessWidget {
   bool get _disabled => false;
 
   /// The action to perform when the button is pressed.
-  void _onPressed(final BuildContext context);
+  void _onPressed(BuildContext context);
 
   // -- END: TO OVERRIDE
 
@@ -85,7 +85,7 @@ sealed class _AmphitheatreAnimatedOpacityIconButton extends StatelessWidget {
   bool get _captionVisible => showCaption.shouldShow(controller);
 
   @override
-  Widget build(final BuildContext context) => IgnorePointer(
+  Widget build(BuildContext context) => IgnorePointer(
         ignoring: !_visible,
         child: AnimatedOpacity(
           opacity: _disabled
@@ -178,12 +178,12 @@ class AmphitheatreSkipButton extends _AmphitheatreAnimatedOpacityIconButton {
       );
 
   @override
-  String _getTooltip(final BuildContext context) => back
+  String _getTooltip(BuildContext context) => back
       ? getLocalizationDelegate(context).back10Seconds
       : getLocalizationDelegate(context).forward10Seconds;
 
   @override
-  void _onPressed(final BuildContext context) =>
+  void _onPressed(BuildContext context) =>
       controller.seek(back ? -delta : delta);
 
   @override
@@ -200,7 +200,7 @@ class AmphitheatreSkipButton extends _AmphitheatreAnimatedOpacityIconButton {
 /// [_defaultOnCloseButtonPressed] does).
 typedef AmphitheatreCloseButtonAction = void Function(BuildContext context);
 
-void _defaultOnCloseButtonPressed(final BuildContext context) =>
+void _defaultOnCloseButtonPressed(BuildContext context) =>
     Navigator.of(context).pop();
 
 /// A simple 'Close' button with a tooltip. Pops the [Navigator] when tapped.
@@ -224,7 +224,7 @@ class AmphitheatreCloseButton extends _AmphitheatreAnimatedOpacityIconButton {
   Widget get _icon => const Icon(Icons.close);
 
   @override
-  String _getTooltip(final BuildContext context) =>
+  String _getTooltip(BuildContext context) =>
       getLocalizationDelegate(context).close;
 
   @override
@@ -260,7 +260,7 @@ class AmphitheatreCancelButton extends AmphitheatreCloseButton {
   });
 
   @override
-  String _getTooltip(final BuildContext context) =>
+  String _getTooltip(BuildContext context) =>
       getLocalizationDelegate(context).cancel;
 }
 
@@ -282,7 +282,7 @@ class AmphitheatreDoneButton extends _AmphitheatreAnimatedOpacityIconButton {
   });
 
   @override
-  String _getTooltip(final BuildContext context) =>
+  String _getTooltip(BuildContext context) =>
       getLocalizationDelegate(context).done;
 
   @override
@@ -292,7 +292,7 @@ class AmphitheatreDoneButton extends _AmphitheatreAnimatedOpacityIconButton {
   bool get _disabled => onPressed == null;
 
   @override
-  void _onPressed(final BuildContext context) => onPressed?.call(context);
+  void _onPressed(BuildContext context) => onPressed?.call(context);
 
   @override
   void debugFillProperties(final DiagnosticPropertiesBuilder properties) {
@@ -320,7 +320,7 @@ class AmphitheatreReplayButton extends _AmphitheatreAnimatedOpacityIconButton {
   });
 
   @override
-  String _getTooltip(final BuildContext context) =>
+  String _getTooltip(BuildContext context) =>
       getLocalizationDelegate(context).replay;
 
   @override
@@ -418,7 +418,7 @@ class _AmphitheatreAnimatedPlayPauseButtonState
   }
 
   @override
-  Widget build(final BuildContext context) {
+  Widget build(BuildContext context) {
     final String label = widget.controller.isPlaying
         ? getLocalizationDelegate(context).pause
         : getLocalizationDelegate(context).play;
@@ -471,7 +471,7 @@ class AmphitheatreVideoInfoDisplay extends StatelessWidget {
   });
 
   @override
-  Widget build(final BuildContext context) {
+  Widget build(BuildContext context) {
     final AmphitheatreVideoInfo? info = controller.info;
     if (info == null || info.isEmpty) return const SizedBox.shrink();
 
@@ -539,7 +539,7 @@ class AmphitheatreVideoControls extends StatefulWidget {
 
 class _AmphitheatreVideoControlsState extends State<AmphitheatreVideoControls> {
   @override
-  Widget build(final BuildContext context) => IgnorePointer(
+  Widget build(BuildContext context) => IgnorePointer(
         ignoring: !widget.controller.isInitialized,
         child: AnimatedOpacity(
           opacity: widget.controller.isInitialized ? 1 : 0,
@@ -624,7 +624,7 @@ class _AmphitheatreProgressSliderState
       (widget.controller.isPlaying && widget.controller.isBuffering);
 
   @override
-  Widget build(final BuildContext context) => Column(
+  Widget build(BuildContext context) => Column(
         children: [
           if (_isBuffering)
             Padding(

@@ -248,7 +248,7 @@ class AmphitheatreEditor extends StatefulWidget {
   /// When the [AmphitheatreEditor] pops, it either pops with null (if no
   /// changes were made), or it pops with the path to the modified video.
   static Future<String?> launch(
-    final BuildContext context, {
+    BuildContext context, {
     required final AmphitheatreController controller,
     final AmphitheatreEditorOptions options = const AmphitheatreEditorOptions(),
     final AmphitheatreEditorRouteBuilder routeBuilder =
@@ -376,7 +376,7 @@ class _AmphitheatreEditorState extends State<AmphitheatreEditor> {
   }
 
   @override
-  Widget build(final BuildContext context) {
+  Widget build(BuildContext context) {
     if (_exporting) {
       return widget.buildExporterProgress(progress: progress);
     }
@@ -438,7 +438,7 @@ class AmphitheatreExporterProgress extends StatelessWidget {
   });
 
   @override
-  Widget build(final BuildContext context) => PopScope(
+  Widget build(BuildContext context) => PopScope(
         canPop: false,
         child: Scaffold(
           body: AnnotatedRegion<SystemUiOverlayStyle>(
@@ -918,7 +918,7 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
   }
 
   @override
-  Widget build(final BuildContext context) => Padding(
+  Widget build(BuildContext context) => Padding(
         padding: EdgeInsets.all(widget.style.borderThickness / 2),
         child: SizedBox.fromSize(
           size: Size.fromHeight(widget.height),

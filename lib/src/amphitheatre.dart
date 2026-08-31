@@ -175,7 +175,7 @@ class Amphitheatre extends StatefulWidget {
   /// [AmphitheatreController]) - this function is simply a wrapper around that
   /// API.
   static void launch(
-    final BuildContext context, {
+    BuildContext context, {
     required final AmphitheatreController controller,
     final AmphitheatreRouteBuilder routeBuilder =
         _defaultAmphitheatreRouteBuilder,
@@ -297,7 +297,7 @@ class _AmphitheatreState extends State<Amphitheatre> {
   }
 
   @override
-  Widget build(final BuildContext context) => Scaffold(
+  Widget build(BuildContext context) => Scaffold(
         backgroundColor: Colors.black,
         body: Stack(
           fit: StackFit.expand,

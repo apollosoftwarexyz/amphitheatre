@@ -62,5 +62,5 @@ extension FormatDuration on Duration {
 /// returns the English localizations ([AmphitheatreLocalizationsEn]) instead.
 ///
 /// **This is for internal use within Amphitheatre only.**
-AmphitheatreLocalizations getLocalizationDelegate(final BuildContext context) =>
+AmphitheatreLocalizations getLocalizationDelegate(BuildContext context) =>
     AmphitheatreLocalizations.of(context) ?? AmphitheatreLocalizationsEn();
