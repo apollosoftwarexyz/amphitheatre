@@ -6,6 +6,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
+/// The error code returned by an [AmphitheatrePlatform] when an operation was
+/// aborted (or a warning was raised) because it would likely exceed the
+/// available disk space.
+///
+/// The error message accompanying this code is human-readable and suitable
+/// for display.
+const String kExceedsDiskSpaceErrorCode = 'EXCEEDS_DISK_SPACE';
+
 /// Set the platform interface implementation for [Amphitheatre] and
 /// [AmphitheatreEditor].
 ///
@@ -85,6 +93,38 @@ enum AmphitheatreCropVideoQuality {
       );
 }
 
+/// The behavior to employ when an operation would exceed available disk space.
+enum AmphitheatreDiskSpacePolicy {
+  /// Continue silently, disregarding available disk space (or lack thereof).
+  ///
+  /// The operation is unlikely to succeed under these conditions and, as a
+  /// result of not checking, may fail less gracefully.
+  ignore,
+
+  /// Warn, but attempt to continue, if the operation would require more disk
+  /// space than is available.
+  ///
+  /// As with [ignore], the operation is unlikely to succeed and may fail less
+  /// gracefully but [warnIfExceeds] indicates that the disk space policy
+  /// callback should be invoked in cases where the available disk space is
+  /// likely to be exceeded (which allows tracking cases where the disk
+  /// space limits would be reached).
+  warnIfExceeds,
+
+  /// Abort the operation if it would likely require more disk space than is
+  /// available.
+  ///
+  /// This invokes the disk space policy callback (which allows tracking cases
+  /// where the disk space limits would be reached).
+  abortIfExceeds,
+}
+
+/// Invoked if the [AmphitheatreDiskSpacePolicy] check triggers a warning or
+/// abort because the operation would exceed the available disk space.
+typedef OnExceedsDiskSpace = void Function(
+  AmphitheatreDiskSpacePolicy diskSpacePolicy,
+);
+
 /// Contains status information returned by the [AmphitheatrePlatform]
 /// performing a crop operation.
 abstract class AmphitheatreCropVideoStatus {
@@ -160,12 +200,17 @@ abstract class AmphitheatrePlatform extends PlatformInterface {
   /// The output video quality is set to the given [quality]. If the quality is
   /// not specified, a platform-specific optimal value will be chosen.
   ///
+  /// The [diskSpacePolicy] specifies whether to check for and, how to deal with
+  /// a lack of, available disk space.
+  ///
   /// The returned future completes when the crop operation has started. See
   /// [AmphitheatreCropVideoSession] for details.
   Future<AmphitheatreCropVideoSession> cropVideo({
     required final String path,
     required final int start,
     required final int end,
+    required final AmphitheatreDiskSpacePolicy diskSpacePolicy,
+    final OnExceedsDiskSpace? onExceedsDiskSpace,
     final AmphitheatreCropVideoQuality? quality,
   });
 }
@@ -180,6 +225,12 @@ abstract class AmphitheatrePlatform extends PlatformInterface {
 /// should be guaranteed before a crop completes, though it may be at 100%. UIs
 /// should generally show an indeterminate (i.e., waiting) state until the first
 /// status event is received.
+///
+/// Cancelling a subscription to the [status] stream instructs the platform to
+/// cancel the crop operation (if it is still running, causing [future] to
+/// complete with an error) and discard the session. This avoids dangling
+/// background work when the consumer of a session goes away, so the stream
+/// should remain subscribed for as long as the result is wanted.
 abstract class AmphitheatreCropVideoSession {
   /// Get the unique session ID for this crop operation.
   String get id;
@@ -215,6 +266,9 @@ final class AmphitheatrePlatformMethodChannel extends AmphitheatrePlatform {
 
   @override
   void ensureInstanceInitialized() {
+    // If the instance is already initialized, pass the _init message to the
+    // platform to clean up the previous state and reinitialize (the first time,
+    // it's already cleanly initialized so there's no need to do this).
     if (_initialized) {
       WidgetsFlutterBinding.ensureInitialized();
       unawaited(_platform.invokeMethod('_init'));
@@ -228,9 +282,6 @@ final class AmphitheatrePlatformMethodChannel extends AmphitheatrePlatform {
     if ([
       TargetPlatform.android,
       TargetPlatform.iOS,
-      TargetPlatform.linux,
-      TargetPlatform.macOS,
-      TargetPlatform.fuchsia,
     ].contains(defaultTargetPlatform)) {
       return '/';
     }
@@ -245,15 +296,34 @@ final class AmphitheatrePlatformMethodChannel extends AmphitheatrePlatform {
 
   @override
   Future<void> deleteFile(final String path) async =>
-      _platform.invokeMethod('deleteFile');
+      _platform.invokeMethod('deleteFile', {'path': path});
 
   @override
   Future<AmphitheatreCropVideoSession> cropVideo({
     required final String path,
     required final int start,
     required final int end,
+    required final AmphitheatreDiskSpacePolicy diskSpacePolicy,
+    final OnExceedsDiskSpace? onExceedsDiskSpace,
     final AmphitheatreCropVideoQuality? quality,
   }) async {
+    if (diskSpacePolicy != AmphitheatreDiskSpacePolicy.ignore) {
+      try {
+        await _platform.invokeMethod('checkCropVideoDiskSpace', {
+          'path': path,
+          'start': start,
+          'end': end,
+        });
+      } on PlatformException catch (error) {
+        if (error.code != kExceedsDiskSpaceErrorCode) rethrow;
+
+        onExceedsDiskSpace?.call(diskSpacePolicy);
+        if (diskSpacePolicy == AmphitheatreDiskSpacePolicy.abortIfExceeds) {
+          rethrow;
+        }
+      }
+    }
+
     final String id = (await _platform.invokeMethod<String>('startCropVideo', {
       'quality': quality?.name,
       'path': path,
@@ -263,10 +333,6 @@ final class AmphitheatrePlatformMethodChannel extends AmphitheatrePlatform {
 
     return _MethodChannelCropVideoSession(
       id: id,
-      quality: quality,
-      path: path,
-      start: start,
-      end: end,
       channel: _platform,
       eventChannel: _platformEvents,
     );
@@ -282,24 +348,25 @@ class _MethodChannelCropVideoSession implements AmphitheatreCropVideoSession {
 
   _MethodChannelCropVideoSession({
     required this.id,
-    required final String path,
-    required final int start,
-    required final int end,
-    required final AmphitheatreCropVideoQuality? quality,
     required final MethodChannel channel,
     required final EventChannel eventChannel,
-  })  : _future =
-            (() async => (await channel.invokeMethod<String>('awaitCropVideo', {
-                  'sessionId': id,
-                }))!)(),
-        _events = eventChannel
-            .receiveBroadcastStream({'sessionId': id})
-            .map(
-              (final rawEvent) => _MethodChannelCropVideoStatus.from(
-                rawEvent as Map<dynamic, dynamic>,
-              ),
-            )
-            .where((final event) => event.sessionId == id);
+  })  : _future = channel.invokeMethod<String>('awaitCropVideo', {
+          'sessionId': id,
+        }).then<String>((final output) => output!)
+          ..ignore(),
+        _events =
+            eventChannel.receiveBroadcastStream({'sessionId': id}).transform(
+          StreamTransformer<dynamic,
+              _MethodChannelCropVideoStatus>.fromHandlers(
+            handleData: (final rawEvent, final sink) {
+              sink.add(
+                _MethodChannelCropVideoStatus.from(
+                  rawEvent as Map<dynamic, dynamic>,
+                ),
+              );
+            },
+          ),
+        ).where((final event) => event.sessionId == id);
 
   @override
   Future<String> get future => _future;

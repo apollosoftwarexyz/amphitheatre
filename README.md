@@ -140,3 +140,9 @@ Don't forget to run the following command after updating any of the `.arb` files
 ```bash
 flutter gen-l10n
 ```
+
+## AI Policy
+
+This project is experimentally using AI with strict human review and testing.
+If you have concerns or questions about the use of AI, please feel free to open
+an [issue on GitHub](https://github.com/apollosoftwarexyz/amphitheatre/issues/new).

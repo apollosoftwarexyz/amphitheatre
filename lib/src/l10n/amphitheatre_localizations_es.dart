@@ -46,6 +46,9 @@ class AmphitheatreLocalizationsEs extends AmphitheatreLocalizations {
 
     return 'Exportando el video ($progressString)...';
   }
+
+  @override
+  String get unknownError => 'Se ha producido un error desconocido.';
 }
 
 /// The translations for Spanish Castilian, as used in Latin America and the Caribbean (`es_419`).
@@ -88,4 +91,7 @@ class AmphitheatreLocalizationsEs419 extends AmphitheatreLocalizationsEs {
 
     return 'Exportando el video ($progressString)...';
   }
+
+  @override
+  String get unknownError => 'Ocurrió un error desconocido.';
 }

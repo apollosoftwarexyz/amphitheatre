@@ -1,0 +1,402 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+
+<html lang="en">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <title>LCOV - lcov.info - src/amphitheatre_controller.dart</title>
+  <link rel="stylesheet" type="text/css" href="../gcov.css">
+</head>
+
+<body>
+
+          <table width="100%" border=0 cellspacing=0 cellpadding=0>
+            <tr><td class="title">LCOV - code coverage report</td></tr>
+            <tr><td class="ruler"><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+
+            <tr>
+              <td width="100%">
+                <table cellpadding=1 border=0 width="100%">
+          <tr>
+            <td width="10%" class="headerItem">Current view:</td>
+            <td width="10%" class="headerValue"><a href="../index.html" title="Click to go to top-level">top level</a> - <a href="index.html" title="Click to go to directory src">src</a> - amphitheatre_controller.dart</td>
+            <td width="5%"></td>
+            <td width="5%"></td>
+            <td width="5%" class="headerCovTableHead">Coverage</td>
+            <td width="5%" class="headerCovTableHead" title="Covered + Uncovered code">Total</td>
+            <td width="5%" class="headerCovTableHead" title="Exercised code only">Hit</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Test:</td>
+            <td class="headerValue">lcov.info</td>
+            <td></td>
+            <td class="headerItem">Lines:</td>
+            <td class="headerCovTableEntryLo">33.3&nbsp;%</td>
+            <td class="headerCovTableEntry">81</td>
+            <td class="headerCovTableEntry">27</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Test Date:</td>
+            <td class="headerValue">2026-08-19 00:39:21</td>
+            <td></td>
+            <td class="headerItem">Functions:</td>
+            <td class="headerCovTableEntryHi">-</td>
+            <td class="headerCovTableEntry">0</td>
+            <td class="headerCovTableEntry">0</td>
+          </tr>
+                  <tr><td><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+                </table>
+              </td>
+            </tr>
+
+            <tr><td class="ruler"><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+          </table>
+
+          <table cellpadding=0 cellspacing=0 border=0>
+            <tr>
+              <td><br></td>
+            </tr>
+            <tr>
+              <td>
+<pre class="sourceHeading">            Line data    Source code</pre>
+<pre class="source">
+<span id="L1"><span class="lineNum">       1</span>              : import 'dart:async';</span>
+<span id="L2"><span class="lineNum">       2</span>              : </span>
+<span id="L3"><span class="lineNum">       3</span>              : import 'package:amphitheatre/src/amphitheatre.dart';</span>
+<span id="L4"><span class="lineNum">       4</span>              : import 'package:amphitheatre/src/amphitheatre_platform.dart'</span>
+<span id="L5"><span class="lineNum">       5</span>              :     show AmphitheatrePlatform, getAmphitheatrePlatform;</span>
+<span id="L6"><span class="lineNum">       6</span>              : import 'package:amphitheatre/src/editor/amphitheatre_editor.dart';</span>
+<span id="L7"><span class="lineNum">       7</span>              : import 'package:amphitheatre/src/utils.dart';</span>
+<span id="L8"><span class="lineNum">       8</span>              : import 'package:cross_file/cross_file.dart';</span>
+<span id="L9"><span class="lineNum">       9</span>              : import 'package:flutter/animation.dart';</span>
+<span id="L10"><span class="lineNum">      10</span>              : import 'package:flutter/foundation.dart';</span>
+<span id="L11"><span class="lineNum">      11</span>              : import 'package:flutter/services.dart';</span>
+<span id="L12"><span class="lineNum">      12</span>              : import 'package:video_player/video_player.dart';</span>
+<span id="L13"><span class="lineNum">      13</span>              : </span>
+<span id="L14"><span class="lineNum">      14</span>              : /// Stores non-technical information about the video.</span>
+<span id="L15"><span class="lineNum">      15</span>              : /// See [AmphitheatreController.info].</span>
+<span id="L16"><span class="lineNum">      16</span>              : class AmphitheatreVideoInfo {</span>
+<span id="L17"><span class="lineNum">      17</span>              :   /// The title of the video.</span>
+<span id="L18"><span class="lineNum">      18</span>              :   final String? title;</span>
+<span id="L19"><span class="lineNum">      19</span>              : </span>
+<span id="L20"><span class="lineNum">      20</span>              :   /// The subtitle of the video.</span>
+<span id="L21"><span class="lineNum">      21</span>              :   final String? subtitle;</span>
+<span id="L22"><span class="lineNum">      22</span>              : </span>
+<span id="L23"><span class="lineNum">      23</span>              :   /// The video description.</span>
+<span id="L24"><span class="lineNum">      24</span>              :   final String? description;</span>
+<span id="L25"><span class="lineNum">      25</span>              : </span>
+<span id="L26"><span class="lineNum">      26</span>              :   /// Construct an [AmphitheatreVideoInfo] instance.</span>
+<span id="L27"><span class="lineNum">      27</span> <span class="tlaUNC">           0 :   const AmphitheatreVideoInfo({</span></span>
+<span id="L28"><span class="lineNum">      28</span>              :     required this.title,</span>
+<span id="L29"><span class="lineNum">      29</span>              :     required this.subtitle,</span>
+<span id="L30"><span class="lineNum">      30</span>              :     required this.description,</span>
+<span id="L31"><span class="lineNum">      31</span>              :   });</span>
+<span id="L32"><span class="lineNum">      32</span>              : </span>
+<span id="L33"><span class="lineNum">      33</span> <span class="tlaUNC">           0 :   List&lt;Object?&gt; get _nullableElements =&gt; [title, subtitle, description];</span></span>
+<span id="L34"><span class="lineNum">      34</span>              : </span>
+<span id="L35"><span class="lineNum">      35</span>              :   /// Returns true if none of the video info elements are set.</span>
+<span id="L36"><span class="lineNum">      36</span> <span class="tlaUNC">           0 :   bool get isEmpty =&gt; _nullableElements.every((final item) =&gt; item == null);</span></span>
+<span id="L37"><span class="lineNum">      37</span>              : </span>
+<span id="L38"><span class="lineNum">      38</span>              :   /// Returns true if any of the video info elements are set.</span>
+<span id="L39"><span class="lineNum">      39</span> <span class="tlaUNC">           0 :   bool get isNotEmpty =&gt; _nullableElements.any((final item) =&gt; item != null);</span></span>
+<span id="L40"><span class="lineNum">      40</span>              : }</span>
+<span id="L41"><span class="lineNum">      41</span>              : </span>
+<span id="L42"><span class="lineNum">      42</span>              : /// Controls the Amphitheatre video player.</span>
+<span id="L43"><span class="lineNum">      43</span>              : class AmphitheatreController with ChangeNotifier {</span>
+<span id="L44"><span class="lineNum">      44</span>              :   /// The controller for the underlying [VideoPlayer].</span>
+<span id="L45"><span class="lineNum">      45</span>              :   final VideoPlayerController controller;</span>
+<span id="L46"><span class="lineNum">      46</span>              : </span>
+<span id="L47"><span class="lineNum">      47</span>              :   /// Human-readable auxiliary information about the video. This can be used by</span>
+<span id="L48"><span class="lineNum">      48</span>              :   /// components that display the video information, but it has no impact on the</span>
+<span id="L49"><span class="lineNum">      49</span>              :   /// video itself (i.e., it is not technical metadata).</span>
+<span id="L50"><span class="lineNum">      50</span>              :   ///</span>
+<span id="L51"><span class="lineNum">      51</span>              :   /// If omitted, any components that display the [AmphitheatreVideoInfo] will</span>
+<span id="L52"><span class="lineNum">      52</span>              :   /// not be rendered.</span>
+<span id="L53"><span class="lineNum">      53</span>              :   final AmphitheatreVideoInfo? info;</span>
+<span id="L54"><span class="lineNum">      54</span>              : </span>
+<span id="L55"><span class="lineNum">      55</span>              :   /// The duration to use for animations and transitions.</span>
+<span id="L56"><span class="lineNum">      56</span>              :   Duration animationDuration;</span>
+<span id="L57"><span class="lineNum">      57</span>              : </span>
+<span id="L58"><span class="lineNum">      58</span>              :   /// The curve to use for animations and transitions.</span>
+<span id="L59"><span class="lineNum">      59</span>              :   Curve animationCurve;</span>
+<span id="L60"><span class="lineNum">      60</span>              : </span>
+<span id="L61"><span class="lineNum">      61</span>              :   /// Construct the [AmphitheatreController].</span>
+<span id="L62"><span class="lineNum">      62</span> <span class="tlaGNC">           1 :   AmphitheatreController({</span></span>
+<span id="L63"><span class="lineNum">      63</span>              :     required this.controller,</span>
+<span id="L64"><span class="lineNum">      64</span>              :     this.info,</span>
+<span id="L65"><span class="lineNum">      65</span>              :     this.animationDuration = const Duration(milliseconds: 200),</span>
+<span id="L66"><span class="lineNum">      66</span>              :     this.animationCurve = Curves.easeInOut,</span>
+<span id="L67"><span class="lineNum">      67</span>              :   });</span>
+<span id="L68"><span class="lineNum">      68</span>              : </span>
+<span id="L69"><span class="lineNum">      69</span>              :   /// Returns true if the [info] is not null and the</span>
+<span id="L70"><span class="lineNum">      70</span>              :   /// [AmphitheatreVideoInfo.isNotEmpty].</span>
+<span id="L71"><span class="lineNum">      71</span> <span class="tlaUNC">           0 :   bool get hasVideoInfo =&gt; info != null &amp;&amp; info!.isNotEmpty;</span></span>
+<span id="L72"><span class="lineNum">      72</span>              : </span>
+<span id="L73"><span class="lineNum">      73</span>              :   /// Returns whether the video has been completed.</span>
+<span id="L74"><span class="lineNum">      74</span> <span class="tlaGNC">           4 :   bool get isCompleted =&gt; controller.value.isCompleted;</span></span>
+<span id="L75"><span class="lineNum">      75</span>              : </span>
+<span id="L76"><span class="lineNum">      76</span>              :   /// Returns whether the video is playing.</span>
+<span id="L77"><span class="lineNum">      77</span> <span class="tlaGNC">           4 :   bool get isPlaying =&gt; controller.value.isPlaying;</span></span>
+<span id="L78"><span class="lineNum">      78</span>              : </span>
+<span id="L79"><span class="lineNum">      79</span>              :   /// Returns whether the video is buffering.</span>
+<span id="L80"><span class="lineNum">      80</span> <span class="tlaUNC">           0 :   bool get isBuffering =&gt; controller.value.isBuffering;</span></span>
+<span id="L81"><span class="lineNum">      81</span>              : </span>
+<span id="L82"><span class="lineNum">      82</span>              :   /// Returns the greatest position that the player has buffered to, within the</span>
+<span id="L83"><span class="lineNum">      83</span>              :   /// video. The value is clamped to the maximum duration of the video.</span>
+<span id="L84"><span class="lineNum">      84</span>              :   ///</span>
+<span id="L85"><span class="lineNum">      85</span>              :   /// If there is no data buffered (i.e., the list of buffers from the</span>
+<span id="L86"><span class="lineNum">      86</span>              :   /// underlying [controller] is empty), this returns null.</span>
+<span id="L87"><span class="lineNum">      87</span>              :   ///</span>
+<span id="L88"><span class="lineNum">      88</span>              :   /// This is therefore a fairly simple heuristic that may be off if more</span>
+<span id="L89"><span class="lineNum">      89</span>              :   /// advanced buffering logic is used internally.</span>
+<span id="L90"><span class="lineNum">      90</span> <span class="tlaUNC">           0 :   Duration? get buffered {</span></span>
+<span id="L91"><span class="lineNum">      91</span> <span class="tlaUNC">           0 :     final DurationRange? buffer = controller.value.buffered.lastOrNull;</span></span>
+<span id="L92"><span class="lineNum">      92</span>              :     if (buffer == null) return null;</span>
+<span id="L93"><span class="lineNum">      93</span>              : </span>
+<span id="L94"><span class="lineNum">      94</span> <span class="tlaUNC">           0 :     return buffer.end &gt; controller.value.duration</span></span>
+<span id="L95"><span class="lineNum">      95</span> <span class="tlaUNC">           0 :         ? controller.value.duration</span></span>
+<span id="L96"><span class="lineNum">      96</span> <span class="tlaUNC">           0 :         : buffer.end;</span></span>
+<span id="L97"><span class="lineNum">      97</span>              :   }</span>
+<span id="L98"><span class="lineNum">      98</span>              : </span>
+<span id="L99"><span class="lineNum">      99</span>              :   /// Returns the position of the player, within the video.</span>
+<span id="L100"><span class="lineNum">     100</span> <span class="tlaGNC">           4 :   Duration get position =&gt; controller.value.position;</span></span>
+<span id="L101"><span class="lineNum">     101</span>              : </span>
+<span id="L102"><span class="lineNum">     102</span>              :   /// Returns the duration of the entire video.</span>
+<span id="L103"><span class="lineNum">     103</span> <span class="tlaGNC">           4 :   Duration get duration =&gt; controller.value.duration;</span></span>
+<span id="L104"><span class="lineNum">     104</span>              : </span>
+<span id="L105"><span class="lineNum">     105</span>              :   /// Returns the formatted position of the player, within the video.</span>
+<span id="L106"><span class="lineNum">     106</span> <span class="tlaUNC">           0 :   String get formattedPosition =&gt; controller.value.position</span></span>
+<span id="L107"><span class="lineNum">     107</span> <span class="tlaUNC">           0 :       .format(hours: controller.value.duration.hasHours);</span></span>
+<span id="L108"><span class="lineNum">     108</span>              : </span>
+<span id="L109"><span class="lineNum">     109</span>              :   /// Returns the formatted duration of the entire video.</span>
+<span id="L110"><span class="lineNum">     110</span> <span class="tlaUNC">           0 :   String get formattedDuration =&gt; controller.value.duration.format();</span></span>
+<span id="L111"><span class="lineNum">     111</span>              : </span>
+<span id="L112"><span class="lineNum">     112</span>              :   /// Returns true when the underlying [controller] has been initialized. This</span>
+<span id="L113"><span class="lineNum">     113</span>              :   /// is triggered by calling the [initialize] function on the</span>
+<span id="L114"><span class="lineNum">     114</span>              :   /// [AmphitheatreController].</span>
+<span id="L115"><span class="lineNum">     115</span> <span class="tlaGNC">           4 :   bool get isInitialized =&gt; controller.value.isInitialized;</span></span>
+<span id="L116"><span class="lineNum">     116</span>              : </span>
+<span id="L117"><span class="lineNum">     117</span>              :   /// Returns the aspect ratio of the video.</span>
+<span id="L118"><span class="lineNum">     118</span> <span class="tlaGNC">           4 :   double get aspectRatio =&gt; controller.value.aspectRatio;</span></span>
+<span id="L119"><span class="lineNum">     119</span>              : </span>
+<span id="L120"><span class="lineNum">     120</span>              :   bool _initialized = false;</span>
+<span id="L121"><span class="lineNum">     121</span>              : </span>
+<span id="L122"><span class="lineNum">     122</span>              :   /// Initialize the underlying [controller].</span>
+<span id="L123"><span class="lineNum">     123</span> <span class="tlaGNC">           1 :   void initialize({final bool autoPlay = true, final bool looping = false}) {</span></span>
+<span id="L124"><span class="lineNum">     124</span>              :     // Ensure the controller is not re-initialized when it is already</span>
+<span id="L125"><span class="lineNum">     125</span>              :     // initialized.</span>
+<span id="L126"><span class="lineNum">     126</span> <span class="tlaGNC">           1 :     if (_initialized) return;</span></span>
+<span id="L127"><span class="lineNum">     127</span>              : </span>
+<span id="L128"><span class="lineNum">     128</span> <span class="tlaGNC">           1 :     _initialized = true;</span></span>
+<span id="L129"><span class="lineNum">     129</span>              : </span>
+<span id="L130"><span class="lineNum">     130</span> <span class="tlaGNC">           3 :     controller.addListener(_onControllerUpdate);</span></span>
+<span id="L131"><span class="lineNum">     131</span> <span class="tlaGNC">           3 :     unawaited(controller.setLooping(looping));</span></span>
+<span id="L132"><span class="lineNum">     132</span>              : </span>
+<span id="L133"><span class="lineNum">     133</span> <span class="tlaGNC">           1 :     unawaited(</span></span>
+<span id="L134"><span class="lineNum">     134</span> <span class="tlaGNC">           4 :       controller.initialize().then((final _) {</span></span>
+<span id="L135"><span class="lineNum">     135</span> <span class="tlaUNC">           0 :         if (autoPlay) play();</span></span>
+<span id="L136"><span class="lineNum">     136</span>              :       }),</span>
+<span id="L137"><span class="lineNum">     137</span>              :     );</span>
+<span id="L138"><span class="lineNum">     138</span>              :   }</span>
+<span id="L139"><span class="lineNum">     139</span>              : </span>
+<span id="L140"><span class="lineNum">     140</span>              :   /// Instruct the [controller] to start playing the video.</span>
+<span id="L141"><span class="lineNum">     141</span> <span class="tlaUNC">           0 :   void play() =&gt; unawaited(controller.play());</span></span>
+<span id="L142"><span class="lineNum">     142</span>              : </span>
+<span id="L143"><span class="lineNum">     143</span>              :   /// Instruct the [controller] to pause the video, whilst retaining the</span>
+<span id="L144"><span class="lineNum">     144</span>              :   /// position.</span>
+<span id="L145"><span class="lineNum">     145</span> <span class="tlaUNC">           0 :   void pause() =&gt; unawaited(controller.pause());</span></span>
+<span id="L146"><span class="lineNum">     146</span>              : </span>
+<span id="L147"><span class="lineNum">     147</span>              :   /// Instruct the [controller] to start playing the video from the start.</span>
+<span id="L148"><span class="lineNum">     148</span> <span class="tlaUNC">           0 :   void replay() =&gt; unawaited(</span></span>
+<span id="L149"><span class="lineNum">     149</span> <span class="tlaUNC">           0 :         controller.seekTo(Duration.zero).then((final _) =&gt; controller.play()),</span></span>
+<span id="L150"><span class="lineNum">     150</span>              :       );</span>
+<span id="L151"><span class="lineNum">     151</span>              : </span>
+<span id="L152"><span class="lineNum">     152</span>              :   /// Instruct the [controller] to seek by [delta], relative to the current</span>
+<span id="L153"><span class="lineNum">     153</span>              :   /// position.</span>
+<span id="L154"><span class="lineNum">     154</span> <span class="tlaUNC">           0 :   void seek(final Duration delta) =&gt; seekTo(controller.value.position + delta);</span></span>
+<span id="L155"><span class="lineNum">     155</span>              : </span>
+<span id="L156"><span class="lineNum">     156</span>              :   /// Instruct the [controller] to seek to the given [time].</span>
+<span id="L157"><span class="lineNum">     157</span> <span class="tlaUNC">           0 :   void seekTo(final Duration time) =&gt; unawaited(() async {</span></span>
+<span id="L158"><span class="lineNum">     158</span> <span class="tlaUNC">           0 :         if (controller.value.isCompleted) {</span></span>
+<span id="L159"><span class="lineNum">     159</span> <span class="tlaUNC">           0 :           await controller.play();</span></span>
+<span id="L160"><span class="lineNum">     160</span>              :         }</span>
+<span id="L161"><span class="lineNum">     161</span>              : </span>
+<span id="L162"><span class="lineNum">     162</span> <span class="tlaUNC">           0 :         return controller.seekTo(time);</span></span>
+<span id="L163"><span class="lineNum">     163</span> <span class="tlaUNC">           0 :       }());</span></span>
+<span id="L164"><span class="lineNum">     164</span>              : </span>
+<span id="L165"><span class="lineNum">     165</span> <span class="tlaGNC">           2 :   void _onControllerUpdate() =&gt; notifyListeners();</span></span>
+<span id="L166"><span class="lineNum">     166</span>              : </span>
+<span id="L167"><span class="lineNum">     167</span>              :   /// Dispose the underlying [controller], then the [AmphitheatreController].</span>
+<span id="L168"><span class="lineNum">     168</span> <span class="tlaGNC">           1 :   @override</span></span>
+<span id="L169"><span class="lineNum">     169</span>              :   void dispose() {</span>
+<span id="L170"><span class="lineNum">     170</span> <span class="tlaGNC">           3 :     unawaited(controller.dispose());</span></span>
+<span id="L171"><span class="lineNum">     171</span> <span class="tlaGNC">           1 :     super.dispose();</span></span>
+<span id="L172"><span class="lineNum">     172</span>              : </span>
+<span id="L173"><span class="lineNum">     173</span>              :     // As everything is now disposed, mark that the controller can be</span>
+<span id="L174"><span class="lineNum">     174</span>              :     // re-initialized if desired.</span>
+<span id="L175"><span class="lineNum">     175</span> <span class="tlaGNC">           1 :     _initialized = false;</span></span>
+<span id="L176"><span class="lineNum">     176</span>              :   }</span>
+<span id="L177"><span class="lineNum">     177</span>              : </span>
+<span id="L178"><span class="lineNum">     178</span>              :   /// Fetch the path for the video from the underlying controller (e.g., so it</span>
+<span id="L179"><span class="lineNum">     179</span>              :   /// can be used by the [AmphitheatreEditor]).</span>
+<span id="L180"><span class="lineNum">     180</span>              :   ///</span>
+<span id="L181"><span class="lineNum">     181</span>              :   /// The controller must have been initialized (see [initialize]), or this</span>
+<span id="L182"><span class="lineNum">     182</span>              :   /// function throws an error.</span>
+<span id="L183"><span class="lineNum">     183</span>              :   ///</span>
+<span id="L184"><span class="lineNum">     184</span>              :   /// If [temporaryFileFallback] is false, this currently only supports</span>
+<span id="L185"><span class="lineNum">     185</span>              :   /// [DataSourceType.file]. When the fallback is true, this method calls</span>
+<span id="L186"><span class="lineNum">     186</span>              :   /// [getVideo] to buffer the data into a temporary file and returns the path</span>
+<span id="L187"><span class="lineNum">     187</span>              :   /// to the temporary file instead.</span>
+<span id="L188"><span class="lineNum">     188</span>              :   ///</span>
+<span id="L189"><span class="lineNum">     189</span>              :   /// The returned [AmphitheatreVideoPath] specifies a normalized file path with</span>
+<span id="L190"><span class="lineNum">     190</span>              :   /// an indication of whether the temporary fallback described above was used.</span>
+<span id="L191"><span class="lineNum">     191</span> <span class="tlaGNC">           1 :   Future&lt;AmphitheatreVideoPath&gt; getVideoPath({</span></span>
+<span id="L192"><span class="lineNum">     192</span>              :     final bool temporaryFileFallback = true,</span>
+<span id="L193"><span class="lineNum">     193</span>              :   }) async {</span>
+<span id="L194"><span class="lineNum">     194</span> <span class="tlaGNC">           3 :     if (!controller.value.isInitialized) {</span></span>
+<span id="L195"><span class="lineNum">     195</span> <span class="tlaUNC">           0 :       throw StateError('The controller has not been initialized yet.');</span></span>
+<span id="L196"><span class="lineNum">     196</span>              :     }</span>
+<span id="L197"><span class="lineNum">     197</span>              : </span>
+<span id="L198"><span class="lineNum">     198</span> <span class="tlaGNC">           3 :     if (controller.dataSourceType == DataSourceType.file) {</span></span>
+<span id="L199"><span class="lineNum">     199</span> <span class="tlaGNC">           1 :       return AmphitheatreVideoPath(</span></span>
+<span id="L200"><span class="lineNum">     200</span> <span class="tlaGNC">           5 :         path: Uri.parse(controller.dataSource).normalizePath().path,</span></span>
+<span id="L201"><span class="lineNum">     201</span>              :         isTemporary: false,</span>
+<span id="L202"><span class="lineNum">     202</span>              :       );</span>
+<span id="L203"><span class="lineNum">     203</span>              :     }</span>
+<span id="L204"><span class="lineNum">     204</span>              : </span>
+<span id="L205"><span class="lineNum">     205</span>              :     if (!temporaryFileFallback) {</span>
+<span id="L206"><span class="lineNum">     206</span> <span class="tlaUNC">           0 :       throw UnsupportedError('Data source does not have a natively supported path and temporaryFileFallback is false.');</span></span>
+<span id="L207"><span class="lineNum">     207</span>              :     }</span>
+<span id="L208"><span class="lineNum">     208</span>              : </span>
+<span id="L209"><span class="lineNum">     209</span> <span class="tlaUNC">           0 :     final AmphitheatrePlatform platform = getAmphitheatrePlatform();</span></span>
+<span id="L210"><span class="lineNum">     210</span> <span class="tlaUNC">           0 :     final String tempDir = await platform.getTemporaryDirectory();</span></span>
+<span id="L211"><span class="lineNum">     211</span>              : </span>
+<span id="L212"><span class="lineNum">     212</span> <span class="tlaUNC">           0 :     final AmphitheatreVideo video = await getVideo();</span></span>
+<span id="L213"><span class="lineNum">     213</span> <span class="tlaUNC">           0 :     final inputFile = XFile.fromData(video.data);</span></span>
+<span id="L214"><span class="lineNum">     214</span> <span class="tlaUNC">           0 :     final String inputFilePath = platform.joinPath(tempDir, video.name);</span></span>
+<span id="L215"><span class="lineNum">     215</span> <span class="tlaUNC">           0 :     await inputFile.saveTo(inputFilePath);</span></span>
+<span id="L216"><span class="lineNum">     216</span> <span class="tlaUNC">           0 :     return AmphitheatreVideoPath(path: inputFilePath, isTemporary: true);</span></span>
+<span id="L217"><span class="lineNum">     217</span>              :   }</span>
+<span id="L218"><span class="lineNum">     218</span>              : </span>
+<span id="L219"><span class="lineNum">     219</span>              :   /// Fetch the data for the video from the underlying controller (e.g., so it</span>
+<span id="L220"><span class="lineNum">     220</span>              :   /// can be used by the [AmphitheatreEditor]).</span>
+<span id="L221"><span class="lineNum">     221</span>              :   ///</span>
+<span id="L222"><span class="lineNum">     222</span>              :   /// The controller must have been initialized (see [initialize]), or this</span>
+<span id="L223"><span class="lineNum">     223</span>              :   /// function throws an error.</span>
+<span id="L224"><span class="lineNum">     224</span>              :   ///</span>
+<span id="L225"><span class="lineNum">     225</span>              :   /// This currently only supports [DataSourceType.file] and</span>
+<span id="L226"><span class="lineNum">     226</span>              :   /// [DataSourceType.asset]. At present, the simplest workaround is to load</span>
+<span id="L227"><span class="lineNum">     227</span>              :   /// unsupported file types using XFile, then save it into a temporary file and</span>
+<span id="L228"><span class="lineNum">     228</span>              :   /// then construct a [VideoPlayerController.file] with it, when initializing</span>
+<span id="L229"><span class="lineNum">     229</span>              :   /// the [AmphitheatreController].</span>
+<span id="L230"><span class="lineNum">     230</span> <span class="tlaUNC">           0 :   Future&lt;AmphitheatreVideo&gt; getVideo() async {</span></span>
+<span id="L231"><span class="lineNum">     231</span> <span class="tlaUNC">           0 :     if (!controller.value.isInitialized) {</span></span>
+<span id="L232"><span class="lineNum">     232</span> <span class="tlaUNC">           0 :       throw StateError('The controller has not been initialized yet.');</span></span>
+<span id="L233"><span class="lineNum">     233</span>              :     }</span>
+<span id="L234"><span class="lineNum">     234</span>              : </span>
+<span id="L235"><span class="lineNum">     235</span>              :     String name;</span>
+<span id="L236"><span class="lineNum">     236</span>              :     Uint8List data;</span>
+<span id="L237"><span class="lineNum">     237</span> <span class="tlaUNC">           0 :     final Duration duration = controller.value.duration;</span></span>
+<span id="L238"><span class="lineNum">     238</span>              : </span>
+<span id="L239"><span class="lineNum">     239</span> <span class="tlaUNC">           0 :     switch (controller.dataSourceType) {</span></span>
+<span id="L240"><span class="lineNum">     240</span> <span class="tlaUNC">           0 :       case DataSourceType.file:</span></span>
+<span id="L241"><span class="lineNum">     241</span> <span class="tlaUNC">           0 :         final Uri uri = Uri.parse(controller.dataSource).normalizePath();</span></span>
+<span id="L242"><span class="lineNum">     242</span> <span class="tlaUNC">           0 :         name = uri.pathSegments.last;</span></span>
+<span id="L243"><span class="lineNum">     243</span> <span class="tlaUNC">           0 :         data = await XFile(uri.path).readAsBytes();</span></span>
+<span id="L244"><span class="lineNum">     244</span> <span class="tlaUNC">           0 :       case DataSourceType.asset:</span></span>
+<span id="L245"><span class="lineNum">     245</span>              :         // Assets use keys which are always delimited by a forward slash.</span>
+<span id="L246"><span class="lineNum">     246</span> <span class="tlaUNC">           0 :         name = controller.dataSource.split('/').last;</span></span>
+<span id="L247"><span class="lineNum">     247</span> <span class="tlaUNC">           0 :         data = Uint8List.view(</span></span>
+<span id="L248"><span class="lineNum">     248</span> <span class="tlaUNC">           0 :           (await rootBundle.load(controller.dataSource)).buffer,</span></span>
+<span id="L249"><span class="lineNum">     249</span>              :         );</span>
+<span id="L250"><span class="lineNum">     250</span> <span class="tlaUNC">           0 :       case DataSourceType.network:</span></span>
+<span id="L251"><span class="lineNum">     251</span>              :         // NOTE: Not yet implemented as I didn't want to introduce a dependency</span>
+<span id="L252"><span class="lineNum">     252</span>              :         // on the HTTP package yet and I haven't considered the final UX 'flow'.</span>
+<span id="L253"><span class="lineNum">     253</span>              : </span>
+<span id="L254"><span class="lineNum">     254</span>              :         // NOTE: when implementing network, don't forget that the dataSource is</span>
+<span id="L255"><span class="lineNum">     255</span>              :         // presumably just the URL. In which case, if there are any query</span>
+<span id="L256"><span class="lineNum">     256</span>              :         // parameters, the platform.splitPath(controller.dataSource).last</span>
+<span id="L257"><span class="lineNum">     257</span>              :         // heuristic won't work. (It also wouldn't be a backslash on Windows).</span>
+<span id="L258"><span class="lineNum">     258</span>              :         // So proper URL parsing will need to be used to isolate the path</span>
+<span id="L259"><span class="lineNum">     259</span>              :         // segment of the URL.</span>
+<span id="L260"><span class="lineNum">     260</span> <span class="tlaUNC">           0 :         throw UnimplementedError(</span></span>
+<span id="L261"><span class="lineNum">     261</span>              :           '[Amphitheatre] Data source type not yet supported: network',</span>
+<span id="L262"><span class="lineNum">     262</span>              :         );</span>
+<span id="L263"><span class="lineNum">     263</span>              :       default:</span>
+<span id="L264"><span class="lineNum">     264</span> <span class="tlaUNC">           0 :         throw UnsupportedError(</span></span>
+<span id="L265"><span class="lineNum">     265</span> <span class="tlaUNC">           0 :           '[Amphitheatre] Unknown or unsupported data source type: ${controller.dataSourceType}',</span></span>
+<span id="L266"><span class="lineNum">     266</span>              :         );</span>
+<span id="L267"><span class="lineNum">     267</span>              :     }</span>
+<span id="L268"><span class="lineNum">     268</span>              : </span>
+<span id="L269"><span class="lineNum">     269</span> <span class="tlaUNC">           0 :     return AmphitheatreVideo(</span></span>
+<span id="L270"><span class="lineNum">     270</span>              :       name: name,</span>
+<span id="L271"><span class="lineNum">     271</span>              :       data: data,</span>
+<span id="L272"><span class="lineNum">     272</span>              :       duration: duration,</span>
+<span id="L273"><span class="lineNum">     273</span>              :     );</span>
+<span id="L274"><span class="lineNum">     274</span>              :   }</span>
+<span id="L275"><span class="lineNum">     275</span>              : }</span>
+<span id="L276"><span class="lineNum">     276</span>              : </span>
+<span id="L277"><span class="lineNum">     277</span>              : /// A path to a video being displayed by [Amphitheatre].</span>
+<span id="L278"><span class="lineNum">     278</span>              : ///</span>
+<span id="L279"><span class="lineNum">     279</span>              : /// For details, see [AmphitheatreController.getVideoPath].</span>
+<span id="L280"><span class="lineNum">     280</span>              : @immutable</span>
+<span id="L281"><span class="lineNum">     281</span>              : final class AmphitheatreVideoPath {</span>
+<span id="L282"><span class="lineNum">     282</span>              :   /// The path to the video file.</span>
+<span id="L283"><span class="lineNum">     283</span>              :   final String path;</span>
+<span id="L284"><span class="lineNum">     284</span>              : </span>
+<span id="L285"><span class="lineNum">     285</span>              :   /// If the video data had to be buffered into a temporary file (to return a</span>
+<span id="L286"><span class="lineNum">     286</span>              :   /// valid path), this is true. Otherwise, if the video path could be used</span>
+<span id="L287"><span class="lineNum">     287</span>              :   /// directly (e.g., because the video was already specified from a file path),</span>
+<span id="L288"><span class="lineNum">     288</span>              :   /// this is false.</span>
+<span id="L289"><span class="lineNum">     289</span>              :   ///</span>
+<span id="L290"><span class="lineNum">     290</span>              :   /// This can be used to determine whether to clean up the file after usage.</span>
+<span id="L291"><span class="lineNum">     291</span>              :   final bool isTemporary;</span>
+<span id="L292"><span class="lineNum">     292</span>              : </span>
+<span id="L293"><span class="lineNum">     293</span>              :   /// Construct an [AmphitheatreVideoPath].</span>
+<span id="L294"><span class="lineNum">     294</span> <span class="tlaGNC">           1 :   const AmphitheatreVideoPath({</span></span>
+<span id="L295"><span class="lineNum">     295</span>              :     required this.path,</span>
+<span id="L296"><span class="lineNum">     296</span>              :     required this.isTemporary,</span>
+<span id="L297"><span class="lineNum">     297</span>              :   });</span>
+<span id="L298"><span class="lineNum">     298</span>              : </span>
+<span id="L299"><span class="lineNum">     299</span>              :   /// If the [AmphitheatreVideoPath] is a temporary file ([isTemporary]), this</span>
+<span id="L300"><span class="lineNum">     300</span>              :   /// will delete the file.</span>
+<span id="L301"><span class="lineNum">     301</span> <span class="tlaGNC">           1 :   Future&lt;void&gt; deleteIfTemporary() async {</span></span>
+<span id="L302"><span class="lineNum">     302</span> <span class="tlaGNC">           1 :     if (isTemporary) {</span></span>
+<span id="L303"><span class="lineNum">     303</span> <span class="tlaUNC">           0 :       await getAmphitheatrePlatform().deleteFile(path);</span></span>
+<span id="L304"><span class="lineNum">     304</span>              :     }</span>
+<span id="L305"><span class="lineNum">     305</span>              :   }</span>
+<span id="L306"><span class="lineNum">     306</span>              : }</span>
+<span id="L307"><span class="lineNum">     307</span>              : </span>
+<span id="L308"><span class="lineNum">     308</span>              : /// Holds data about a video being displayed by [Amphitheatre].</span>
+<span id="L309"><span class="lineNum">     309</span>              : @immutable</span>
+<span id="L310"><span class="lineNum">     310</span>              : final class AmphitheatreVideo {</span>
+<span id="L311"><span class="lineNum">     311</span>              :   /// The name of the video file.</span>
+<span id="L312"><span class="lineNum">     312</span>              :   final String name;</span>
+<span id="L313"><span class="lineNum">     313</span>              : </span>
+<span id="L314"><span class="lineNum">     314</span>              :   /// The duration of the video.</span>
+<span id="L315"><span class="lineNum">     315</span>              :   final Duration duration;</span>
+<span id="L316"><span class="lineNum">     316</span>              : </span>
+<span id="L317"><span class="lineNum">     317</span>              :   /// The raw data of the video.</span>
+<span id="L318"><span class="lineNum">     318</span>              :   final Uint8List data;</span>
+<span id="L319"><span class="lineNum">     319</span>              : </span>
+<span id="L320"><span class="lineNum">     320</span>              :   /// Construct an [AmphitheatreVideo].</span>
+<span id="L321"><span class="lineNum">     321</span> <span class="tlaUNC">           0 :   const AmphitheatreVideo({</span></span>
+<span id="L322"><span class="lineNum">     322</span>              :     required this.name,</span>
+<span id="L323"><span class="lineNum">     323</span>              :     required this.duration,</span>
+<span id="L324"><span class="lineNum">     324</span>              :     required this.data,</span>
+<span id="L325"><span class="lineNum">     325</span>              :   });</span>
+<span id="L326"><span class="lineNum">     326</span>              : }</span>
+        </pre>
+              </td>
+            </tr>
+          </table>
+          <br>
+
+          <table width="100%" border=0 cellspacing=0 cellpadding=0>
+            <tr><td class="ruler"><img src="../glass.png" width=3 height=3 alt=""></td></tr>
+            <tr><td class="versionInfo">Generated by: <a href="https://github.com/linux-test-project/lcov" target="_parent">LCOV version 2.5-0</a></td></tr>
+          </table>
+          <br>
+
+</body>
+</html>

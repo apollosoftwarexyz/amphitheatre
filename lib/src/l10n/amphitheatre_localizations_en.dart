@@ -46,4 +46,7 @@ class AmphitheatreLocalizationsEn extends AmphitheatreLocalizations {
 
     return 'Exporting video ($progressString)...';
   }
+
+  @override
+  String get unknownError => 'An unknown error occurred.';
 }
