@@ -160,6 +160,12 @@ abstract class AmphitheatreLocalizations {
   /// In en, this message translates to:
   /// **'Exporting video ({progress})...'**
   String exportingVideo(double progress);
+
+  /// An unknown error occurred.
+  ///
+  /// In en, this message translates to:
+  /// **'An unknown error occurred.'**
+  String get unknownError;
 }
 
 class _AmphitheatreLocalizationsDelegate

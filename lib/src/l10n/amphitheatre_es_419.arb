@@ -1,4 +1,5 @@
 {
+  "@@locale": "es_419",
   "cancel": "Cancelar",
   "close": "Cerrar",
   "done": "Listo",
@@ -8,5 +9,6 @@
   "play": "Reproducir",
   "replay": "Repetir",
   "preparingToExportVideo": "Preparando la exportación del video...",
-  "exportingVideo": "Exportando el video ({progress})..."
+  "exportingVideo": "Exportando el video ({progress})...",
+  "unknownError": "Ocurrió un error desconocido."
 }

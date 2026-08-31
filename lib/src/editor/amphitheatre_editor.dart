@@ -21,14 +21,14 @@ part 'amphitheatre_editor_controller.dart';
 @immutable
 final class AmphitheatreEditorOptions {
   /// Whether to auto-accept videos that are too short (less than [minLength]).
-  /// 
+  ///
   /// If the video is too long (i.e., its duration is greater than
   /// [maxLength]), the editor is used to prompt the user to crop the video
   /// down to size.
-  /// 
+  ///
   /// If the video is too short, the video will be automatically accepted when
   /// [canAutoAccept] is true.
-  /// 
+  ///
   /// To automatically reject videos, applications should intercept the video
   /// before it is passed to the [AmphitheatreEditor] - this provides greater
   /// flexibility in how applications handle invalid videos.
@@ -42,18 +42,32 @@ final class AmphitheatreEditorOptions {
   /// The maximum length to allow the video to be.
   final Duration maxLength;
 
+  /// The behavior to employ when an edit operation is likely to use more disk
+  /// space than is available.
+  final AmphitheatreDiskSpacePolicy diskSpacePolicy;
+
+  /// Invoked if an operation would exceed available disk space and the
+  /// [AmphitheatreDiskSpacePolicy] is configured to
+  /// [AmphitheatreDiskSpacePolicy.warnIfExceeds] or
+  /// [AmphitheatreDiskSpacePolicy.abortIfExceeds].
+  final OnExceedsDiskSpace? onExceedsDiskSpace;
+
   /// Construct the [AmphitheatreEditorOptions].
   const AmphitheatreEditorOptions({
     this.minLength = const Duration(seconds: 10),
     this.maxLength = const Duration(minutes: 5),
     this.canAutoAccept = false,
+    this.diskSpacePolicy = AmphitheatreDiskSpacePolicy.abortIfExceeds,
+    this.onExceedsDiskSpace,
   });
 
   /// If [canAutoAccept] is true and the video is shorter than [minLength] in
   /// duration (or both are zero), this method returns true to indicate that
   /// the video should be automatically accepted.
   bool shouldAutoAccept(final Duration duration) =>
-      canAutoAccept && ((duration < minLength) || (duration == Duration.zero && minLength == Duration.zero));
+      canAutoAccept &&
+      ((duration < minLength) ||
+          (duration == Duration.zero && minLength == Duration.zero));
 
   /// Returns the default start and end offsets for cropping. The offsets are
   /// based on computing the maximum length that can surround the middle of the
@@ -79,10 +93,19 @@ final class AmphitheatreEditorOptions {
   bool operator ==(final Object other) =>
       other is AmphitheatreEditorOptions &&
       minLength == other.minLength &&
-      maxLength == other.maxLength;
+      maxLength == other.maxLength &&
+      canAutoAccept == other.canAutoAccept &&
+      diskSpacePolicy == other.diskSpacePolicy &&
+      onExceedsDiskSpace == other.onExceedsDiskSpace;
 
   @override
-  int get hashCode => Object.hash(minLength, maxLength);
+  int get hashCode => Object.hash(
+        minLength,
+        maxLength,
+        canAutoAccept,
+        diskSpacePolicy,
+        onExceedsDiskSpace,
+      );
 }
 
 /// Styling options for the [AmphitheatreEditor].
@@ -265,7 +288,7 @@ class AmphitheatreEditor extends StatefulWidget {
   }
 
   @override
-  State<AmphitheatreEditor> createState() => _AmphitheatreEditorState();
+  State<AmphitheatreEditor> createState() => AmphitheatreEditorState();
 
   @override
   void debugFillProperties(final DiagnosticPropertiesBuilder properties) {
@@ -294,7 +317,8 @@ class AmphitheatreEditor extends StatefulWidget {
   }
 }
 
-class _AmphitheatreEditorState extends State<AmphitheatreEditor> {
+/// The state for an [AmphitheatreEditor].
+class AmphitheatreEditorState extends State<AmphitheatreEditor> {
   bool _exporting = false;
   StreamSubscription<AmphitheatreCropVideoStatus>? _exportStatusStream;
 
@@ -312,6 +336,7 @@ class _AmphitheatreEditorState extends State<AmphitheatreEditor> {
   late final _amphitheatre =
       widget.consumedController ? Amphitheatre.consume : Amphitheatre.new;
 
+  /// The editor state controller.
   final AmphitheatreEditorController editorController =
       AmphitheatreEditorController();
 
@@ -356,6 +381,8 @@ class _AmphitheatreEditorState extends State<AmphitheatreEditor> {
           path: inputFilePath.path,
           start: crop.start.inMilliseconds,
           end: crop.end.inMilliseconds,
+          diskSpacePolicy: widget.options.diskSpacePolicy,
+          onExceedsDiskSpace: widget.options.onExceedsDiskSpace,
         );
 
         _exportStatusStream = session.status.listen((final status) {
@@ -367,12 +394,46 @@ class _AmphitheatreEditorState extends State<AmphitheatreEditor> {
         });
 
         outputFilePath = await session.future;
+      } on PlatformException catch (error) {
+        _showExportError(
+          message:
+              error.message ?? getLocalizationDelegate(context).unknownError,
+        );
+        return;
+      } catch (error) {
+        _showExportError(
+          message: getLocalizationDelegate(context).unknownError,
+        );
+        return;
       } finally {
-        await inputFilePath.deleteIfTemporary();
+        try {
+          await inputFilePath.deleteIfTemporary();
+        } catch (_) {}
       }
     }
 
-    Navigator.of(context).pop(outputFilePath);
+    if (mounted) {
+      Navigator.of(context).pop(outputFilePath);
+    }
+  }
+
+  /// Display the error [message] raised whilst producing the output video and
+  /// return the editor to its interactive state.
+  void _showExportError({required final String message}) {
+    // Cancelling the status subscription also instructs the platform to clean
+    // up the failed session.
+    unawaited(_exportStatusStream?.cancel());
+    _exportStatusStream = null;
+
+    if (!mounted) return;
+
+    setState(() {
+      _exporting = false;
+      _progress = null;
+    });
+
+    ScaffoldMessenger.maybeOf(context)
+        ?.showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
