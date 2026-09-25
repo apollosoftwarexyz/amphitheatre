@@ -137,8 +137,10 @@ public class AmphitheatrePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
                 }
 
                 return nil
-            } catch let error {
+            } catch let error as FlutterError {
                 return error
+            } catch let error {
+                return FlutterError(code: "UNKNOWN_ERR", message: "unknown error", details: "error on listen")
             }
         }
     }
@@ -154,8 +156,10 @@ public class AmphitheatrePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
                 let args = try SessionArgs.parse(arguments: arguments)
                 cancelCropVideo(sessionId: args.sessionId)
                 return nil
-            } catch let error {
+            } catch let error as FlutterError {
                 return error
+            } catch let error {
+                return FlutterError(code: "UNKNOWN_ERR", message: "unknown error", details: "error on cancel")
             }
         }
     }
@@ -182,6 +186,7 @@ public class AmphitheatrePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
                         result(true)
                     case "getTemporaryDirectory": result(try await getTemporaryDirectory())
                     case "deleteFile": result(try await deleteFile(args: try DeleteFileArgs.parse(arguments: call.arguments)))
+                    case "getAvailableDiskSpace": result(try await getAvailableDiskSpace())
                     case "checkCropVideoDiskSpace": result(try await checkCropVideoDiskSpace(args: try CropVideoArgs.parse(arguments: call.arguments)))
                     case "startCropVideo": result(try await startCropVideo(args: try CropVideoArgs.parse(arguments: call.arguments)))
                     case "awaitCropVideo": result(try await awaitCropVideo(args: try SessionArgs.parse(arguments: call.arguments)))
@@ -240,6 +245,14 @@ public class AmphitheatrePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
 
         // Return the path to the directory, on success.
         return path
+    }
+    
+    private func getAvailableDiskSpace() throws(FlutterError) -> Long {
+        do {
+            return try FileManager.default.temporaryDirectory.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+        } catch {
+            throw FlutterError(code: "GET_AVAILABLE_DISK_SPACE_FAILED", message: "failed to determine number of available bytes on disk", details: nil)
+        }
     }
 
     public enum CropVideoQuality: String {

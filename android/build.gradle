@@ -1,10 +1,11 @@
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
 
 group = "xyz.apollosoftware.amphitheatre"
 version = "1.0-SNAPSHOT"
 
 buildscript {
-    ext.kotlin_version = "2.0"
+    ext.kotlin_version = "2.6"
 
     repositories {
         google()
@@ -12,8 +13,7 @@ buildscript {
     }
 
     dependencies {
-        classpath("com.android.tools.build:gradle:8.1.4")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.0.21")
+        classpath("com.android.tools.build:gradle:9.4.1")
     }
 }
 
@@ -25,21 +25,24 @@ allprojects {
 }
 
 apply plugin: "com.android.library"
-apply plugin: "kotlin-android"
+
+kotlin {
+    compilerOptions {
+        languageVersion = KotlinVersion.fromVersion(kotlin_version)
+        jvmTarget = JvmTarget.fromTarget("1.8")
+    }
+}
 
 android {
     namespace = "xyz.apollosoftware.amphitheatre"
 
-    compileSdk = 35
+    compileSdk = 37
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
-    }
+        coreLibraryDesugaringEnabled true
 
-    kotlinOptions {
-        languageVersion = kotlin_version
-        jvmTarget = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
     }
 
     sourceSets {
@@ -52,8 +55,11 @@ android {
     }
 
     dependencies {
+        implementation("androidx.media3:media3-transformer:1.11.1")
+        coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
+
         testImplementation("org.jetbrains.kotlin:kotlin-test")
-        testImplementation("org.mockito:mockito-core:5.14.2")
+        testImplementation("org.mockito:mockito-core:5.23.0")
     }
 
     testOptions {

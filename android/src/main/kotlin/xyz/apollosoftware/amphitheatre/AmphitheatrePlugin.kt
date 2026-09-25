@@ -8,10 +8,13 @@ import android.media.MediaMetadataRetriever
 import android.media.MediaMuxer
 import android.media.MediaMuxer.OutputFormat
 import android.os.Build
+import android.os.Environment
+import android.os.StatFs
 import android.util.Log
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
@@ -19,17 +22,138 @@ import io.flutter.plugin.common.MethodChannel.Result
 import java.io.File
 import java.io.IOException
 import java.nio.ByteBuffer
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.max
 
+const val TAG = "amphitheatre"
+
 const val kChannelName = "xyz.apollosoftware.amphitheatre"
+const val eventChannelId = "events"
+
+/**
+ * An error that can be delivered to Flutter.
+ *
+ * @param code The error code. This can be parsed to provide localized error strings, if necessary.
+ * @param message The human-readable message.
+ * @param details The error details, optionally provided.
+ */
+class FlutterError(val code: String, override val message: String, val details: Any? = null): Exception()
+
+/**
+ * An in-progress export session.
+ *
+ * @param activity The activity that started the export session.
+ * @param id The ID of the session.
+ * @param args The arguments that the export session was started with.
+ * @param sink The event sink for the export session - where progress updates should be delivered.
+ */
+internal class AmphitheatreExportSession(val activity: Activity, val id: String, val args: AmphitheatrePlugin.CropVideoArgs, var sink: EventChannel.EventSink?) {
+
+  /**
+   * Bind the given [EventChannel.EventSink] to the export session.
+   *
+   * Once the event sink is bound, progress updates will be delivered to the event sink as they
+   * become available.
+   */
+  fun bind(sink: EventChannel.EventSink?) {
+    if (this.sink != null) {
+      throw FlutterError(code = "CONFLICTING_BIND", message = "tried to bind an event sink to a session that was already bound ($id)")
+    }
+
+    this.sink = sink
+  }
+
+  /**
+   * Deliver the status update to Flutter.
+   *
+   * @param status The new status to deliver.
+   */
+  fun notify(status: Any) {
+    this.sink?.success(status)
+  }
+
+  /**
+   * End the event stream bound to the export session (if any).
+   */
+  fun close() {
+    this.sink?.endOfStream()
+  }
+
+  /**
+   * Cancel the export session.
+   */
+  fun cancel() {
+    // TODO
+  }
+
+}
 
 /** AmphitheatrePlugin */
-class AmphitheatrePlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
+class AmphitheatrePlugin: FlutterPlugin, EventChannel.StreamHandler, MethodCallHandler, ActivityAware {
   /** The MethodChannel that will handle communication between Flutter and Android. */
   private lateinit var channel: MethodChannel
 
+  /** The EventChannel that will handle bidirectional communication between Flutter and Android. */
+  private lateinit var eventChannel: EventChannel
+
   /** The Activity that the application is currently bound to. */
   private var activity: Activity? = null
+
+  /** The set of active export sessions. */
+  private var sessions: ConcurrentHashMap<String, AmphitheatreExportSession> = ConcurrentHashMap()
+
+  override fun onListen(arguments: Any?, sink: EventChannel.EventSink?) {
+    if (arguments == null) return
+
+    val args = SessionArgs.parse(arguments)
+    val session = sessions[args.sessionId] ?: throw FlutterError(
+        code = "UNKNOWN_SESSION",
+        message = "invalid session ID",
+        details = args.sessionId
+    )
+
+    session.bind(sink)
+  }
+
+  override fun onCancel(arguments: Any?) {
+    if (arguments == null) return
+
+    val args = SessionArgs.parse(arguments)
+    sessions.remove(args.sessionId)?.cancel()
+  }
+
+  /**
+   * Clean up any sessions that are not bound to the current activity.
+   */
+  fun cleanUp() {
+    sessions.forEach { (sessionId, session) ->
+      if (session.activity == activity) {
+        Log.d(TAG, "Cleaning up session: $sessionId")
+        session.cancel()
+        sessions.remove(sessionId)
+      }
+    }
+  }
+
+  fun getTemporaryDirectory(result: Result) {
+    // Create the cache directory if it does not already exist.
+    val cacheDir = File(activity!!.cacheDir.absolutePath, kChannelName)
+    if (!cacheDir.exists()) cacheDir.mkdirs()
+    result.success(cacheDir.absolutePath)
+  }
+
+  fun deleteFile(call: MethodCall) {
+    val (path) = DeleteFileArgs.parse(call)
+    File(path).delete()
+  }
+
+  fun getAvailableDiskSpace(result: Result) {
+    try {
+      result.success(StatFs(activity!!.cacheDir.absolutePath).availableBytes)
+    } catch (_: Throwable) {
+      throw FlutterError(code = "GET_AVAILABLE_DISK_SPACE_FAILED", message = "failed to determine number of available bytes on disk")
+    }
+  }
 
   override fun onMethodCall(call: MethodCall, result: Result) {
     if (activity == null) {
@@ -38,16 +162,16 @@ class AmphitheatrePlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
 
     try {
       when(call.method) {
-        "getTemporaryDirectory" -> {
-          // Create the cache directory if it does not already exist.
-          val cacheDirBase = activity!!.cacheDir
-          val cacheDir = File(cacheDirBase.absolutePath, kChannelName)
-          if (!cacheDir.exists()) cacheDir.mkdirs()
-          result.success(cacheDir.absolutePath)
+        "_init" -> {
+          cleanUp()
+          result.success(true)
           return
         }
+        "getTemporaryDirectory" -> getTemporaryDirectory(result)
+        "deleteFile" -> deleteFile(call)
+        "getAvailableDiskSpace" -> getAvailableDiskSpace(result)
         "cropVideo" -> {
-          val (path, start, end) = parseCropVideoArgs(call)
+          val (path, start, end) = CropVideoArgs.parse(call)
           val inputFile = File(path)
 
           // Make sure the input file exists. Returning the same error if the input file is a
@@ -182,32 +306,82 @@ class AmphitheatrePlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
         }
         else -> result.notImplemented()
       }
-    } catch (_: IllegalMethodCallArguments) {
-      result.error("ERR_BAD_PARAMS", "Invalid parameters supplied to ${call.method}()", null)
+    } catch (error: FlutterError) {
+      result.error(error.code, error.message, error.details)
+    } catch (_: Throwable) {
+      result.error("UNKNOWN_ERR", "unknown error", null)
     }
   }
 
-  private fun parseCropVideoArgs(call: MethodCall): Triple<String, Long, Long> {
-    try {
-      val path = call.argument<String>("path")!!
-      val rawStart = call.argument<Any>("start")!!
-      val rawEnd = call.argument<Any>("end")!!
+  internal data class DeleteFileArgs(val path: String) {
 
-      val start: Long = if (rawStart is Long) rawStart else (rawStart as Int).toLong()
-      val end: Long = if (rawEnd is Long) rawEnd else (rawEnd as Int).toLong()
-      return Triple(path, start, end)
-    } catch (ex: Exception) {
-      when (ex) {
-        is ClassCastException, is NullPointerException ->
-          throw IllegalMethodCallArguments()
-        else -> throw ex
+    companion object {
+      fun parse(rawArguments: Any?): DeleteFileArgs {
+        var path: String? = null
+
+        val arguments = rawArguments as? Map<*, *>
+        if (arguments != null) {
+          path = arguments["path"] as? String;
+        }
+
+        if (path != null) {
+          return DeleteFileArgs(path)
+        }
+
+        throw FlutterError(code = "INVALID_ARGS", message = "invalid arguments for deleteFile")
       }
     }
+
+  }
+
+  internal data class SessionArgs(val sessionId: String) {
+
+    companion object {
+      fun parse(rawArguments: Any?): SessionArgs {
+        var sessionId: String? = null
+
+        val arguments = rawArguments as? Map<*, *>
+        if (arguments != null) {
+          sessionId = arguments["sessionId"] as? String;
+        }
+
+        if (sessionId != null) {
+          return SessionArgs(sessionId)
+        }
+
+        throw FlutterError(code = "INVALID_ARGS", message = "invalid arguments for session")
+      }
+    }
+
+  }
+
+  internal data class CropVideoArgs(val path: String, val start: Long, val end: Long) {
+
+    companion object {
+      fun parse(call: MethodCall): CropVideoArgs {
+        try {
+          val rawStart = call.argument<Any>("start")!!
+          val rawEnd = call.argument<Any>("end")!!
+
+          return CropVideoArgs(
+            path = call.argument<String>("path")!!,
+            start = rawStart as? Long ?: (rawStart as Int).toLong(),
+            end = rawEnd as? Long ?: (rawEnd as Int).toLong()
+          )
+        } catch (_: Exception) {
+          throw FlutterError(code = "INVALID_ARGS", message = "invalid arguments for cropVideo")
+        }
+      }
+    }
+
   }
 
   override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
     channel = MethodChannel(flutterPluginBinding.binaryMessenger, kChannelName)
     channel.setMethodCallHandler(this)
+
+    eventChannel = EventChannel(flutterPluginBinding.binaryMessenger, "$kChannelName/$eventChannelId")
+    eventChannel.setStreamHandler(this)
   }
 
   override fun onAttachedToActivity(binding: ActivityPluginBinding) {
@@ -219,9 +393,10 @@ class AmphitheatrePlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
 
   override fun onDetachedFromActivity() = channel.setMethodCallHandler(null)
   override fun onDetachedFromActivityForConfigChanges() = onDetachedFromActivity()
-  override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding)
-          = onDetachedFromActivity()
+
+  override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
+    onDetachedFromActivity()
+    cleanUp()
+  }
 
 }
-
-class IllegalMethodCallArguments: Exception()
