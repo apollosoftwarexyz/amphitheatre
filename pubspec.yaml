@@ -4,8 +4,8 @@ version: 0.0.3
 homepage: https://github.com/apollosoftwarexyz/amphitheatre
 
 environment:
-  sdk: ^3.6.0
-  flutter: '>=3.3.0'
+  sdk: '>=3.13.2 <4.0.0'
+  flutter: '>=3.47.5'
 
 dependencies:
   flutter:

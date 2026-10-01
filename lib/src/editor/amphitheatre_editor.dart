@@ -64,7 +64,7 @@ final class AmphitheatreEditorOptions {
   /// If [canAutoAccept] is true and the video is shorter than [minLength] in
   /// duration (or both are zero), this method returns true to indicate that
   /// the video should be automatically accepted.
-  bool shouldAutoAccept(final Duration duration) =>
+  bool shouldAutoAccept(Duration duration) =>
       canAutoAccept &&
       ((duration < minLength) ||
           (duration == Duration.zero && minLength == Duration.zero));
@@ -72,7 +72,7 @@ final class AmphitheatreEditorOptions {
   /// Returns the default start and end offsets for cropping. The offsets are
   /// based on computing the maximum length that can surround the middle of the
   /// video.
-  (Duration start, Duration end) getDefaultOffsets(final Duration duration) {
+  (Duration start, Duration end) getDefaultOffsets(Duration duration) {
     final int middleMilliseconds =
         (duration.inMilliseconds.toDouble() / 2).round();
 
@@ -90,7 +90,7 @@ final class AmphitheatreEditorOptions {
   }
 
   @override
-  bool operator ==(final Object other) =>
+  bool operator ==(Object other) =>
       other is AmphitheatreEditorOptions &&
       minLength == other.minLength &&
       maxLength == other.maxLength &&
@@ -168,7 +168,7 @@ final class AmphitheatreEditorStyle {
   });
 
   @override
-  bool operator ==(final Object other) =>
+  bool operator ==(Object other) =>
       other is AmphitheatreEditorStyle &&
       borderColor == other.borderColor &&
       borderRadius == other.borderRadius &&
@@ -197,12 +197,12 @@ final class AmphitheatreEditorStyle {
 /// used when an [AmphitheatreEditor] is launched.
 typedef AmphitheatreEditorRouteBuilder = Route<String?> Function(Widget child);
 
-Route<String?> _defaultAmphitheatreEditorRouteBuilder(final Widget child) =>
-    MaterialPageRoute<String?>(builder: (final _) => child);
+Route<String?> _defaultAmphitheatreEditorRouteBuilder(Widget child) =>
+    MaterialPageRoute<String?>(builder: (_) => child);
 
 Widget _buildVideoControls(
-  final AmphitheatreController controller,
-  final bool showControls,
+  AmphitheatreController controller,
+  bool showControls,
 ) =>
     AmphitheatreVideoControls(controller: controller);
 
@@ -272,11 +272,11 @@ class AmphitheatreEditor extends StatefulWidget {
   /// changes were made), or it pops with the path to the modified video.
   static Future<String?> launch(
     BuildContext context, {
-    required final AmphitheatreController controller,
-    final AmphitheatreEditorOptions options = const AmphitheatreEditorOptions(),
-    final AmphitheatreEditorRouteBuilder routeBuilder =
+    required AmphitheatreController controller,
+    AmphitheatreEditorOptions options = const AmphitheatreEditorOptions(),
+    AmphitheatreEditorRouteBuilder routeBuilder =
         _defaultAmphitheatreEditorRouteBuilder,
-    final bool useRootNavigator = false,
+    bool useRootNavigator = false,
   }) async {
     final Widget child = AmphitheatreEditor.consume(
       controller: controller,
@@ -291,7 +291,7 @@ class AmphitheatreEditor extends StatefulWidget {
   State<AmphitheatreEditor> createState() => AmphitheatreEditorState();
 
   @override
-  void debugFillProperties(final DiagnosticPropertiesBuilder properties) {
+  void debugFillProperties(DiagnosticPropertiesBuilder properties) {
     super.debugFillProperties(properties);
     properties
       ..add(
@@ -319,7 +319,7 @@ class AmphitheatreEditor extends StatefulWidget {
 
 /// The state for an [AmphitheatreEditor].
 class AmphitheatreEditorState extends State<AmphitheatreEditor> {
-  bool _exporting = false;
+  var _exporting = false;
   StreamSubscription<AmphitheatreCropVideoStatus>? _exportStatusStream;
 
   double? _progress;
@@ -337,7 +337,7 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
       widget.consumedController ? Amphitheatre.consume : Amphitheatre.new;
 
   /// The editor state controller.
-  final AmphitheatreEditorController editorController =
+  final editorController =
       AmphitheatreEditorController();
 
   @override
@@ -359,6 +359,7 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
   /// editor has not fully initialized).
   bool get canAcceptChanges => editorController.value.crop != null;
 
+  /// Render the modified video.
   Future<void> produceOutputVideo() async {
     if (_exporting) return;
     setState(() {
@@ -385,7 +386,7 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
           onExceedsDiskSpace: widget.options.onExceedsDiskSpace,
         );
 
-        _exportStatusStream = session.status.listen((final status) {
+        _exportStatusStream = session.status.listen((status) {
           if (mounted) {
             setState(() {
               _progress = status.progress;
@@ -395,12 +396,20 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
 
         outputFilePath = await session.future;
       } on PlatformException catch (error) {
+        if (kDebugMode) {
+          print(error);
+        }
+
         _showExportError(
           message:
               error.message ?? getLocalizationDelegate(context).unknownError,
         );
         return;
       } catch (error) {
+        if (kDebugMode) {
+          print(error);
+        }
+
         _showExportError(
           message: getLocalizationDelegate(context).unknownError,
         );
@@ -419,7 +428,7 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
 
   /// Display the error [message] raised whilst producing the output video and
   /// return the editor to its interactive state.
-  void _showExportError({required final String message}) {
+  void _showExportError({required String message}) {
     // Cancelling the status subscription also instructs the platform to clean
     // up the failed session.
     unawaited(_exportStatusStream?.cancel());
@@ -447,16 +456,16 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
       enableToggleControls: false,
       enableReplayButton: false,
       autoPlay: false,
-      buildCloseButton: (final controller, final _) =>
+      buildCloseButton: (controller, _) =>
           AmphitheatreCancelButton(controller: controller),
       buildVideoControls: widget.buildVideoControls,
-      buildDoneButton: (final controller, final _) => AmphitheatreDoneButton(
+      buildDoneButton: (controller, _) => AmphitheatreDoneButton(
         controller: controller,
         onPressed: canAcceptChanges
-            ? (final _) => unawaited(produceOutputVideo())
+            ? (_) => unawaited(produceOutputVideo())
             : null,
       ),
-      buildProgressSlider: (final controller, final __) => Padding(
+      buildProgressSlider: (controller, _) => Padding(
         padding: const EdgeInsets.only(bottom: 10),
         child: AmphitheatreEditorSlider(
           controller: controller,
@@ -469,7 +478,7 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
   }
 
   @override
-  void debugFillProperties(final DiagnosticPropertiesBuilder properties) {
+  void debugFillProperties(DiagnosticPropertiesBuilder properties) {
     super.debugFillProperties(properties);
     properties
       ..add(
@@ -484,7 +493,7 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
   }
 }
 
-Widget _buildAmphitheatreExporterProgress({required final double? progress}) =>
+Widget _buildAmphitheatreExporterProgress({required double? progress}) =>
     AmphitheatreExporterProgress(progress: progress);
 
 /// The default exporter progress screen for the [AmphitheatreEditor].
@@ -539,7 +548,7 @@ class AmphitheatreExporterProgress extends StatelessWidget {
   ///
   /// This aims to recreate the [AppBar] logic, without requiring an unnecessary
   /// or invisible [AppBar].
-  static SystemUiOverlayStyle _getSystemUiOverlayStyle(final ThemeData theme) {
+  static SystemUiOverlayStyle _getSystemUiOverlayStyle(ThemeData theme) {
     final SystemUiOverlayStyle? systemUiOverlayStyle =
         theme.appBarTheme.systemOverlayStyle;
     if (systemUiOverlayStyle != null) {
@@ -561,7 +570,7 @@ class AmphitheatreExporterProgress extends StatelessWidget {
   }
 
   @override
-  void debugFillProperties(final DiagnosticPropertiesBuilder properties) {
+  void debugFillProperties(DiagnosticPropertiesBuilder properties) {
     super.debugFillProperties(properties);
     properties.add(DoubleProperty('progress', progress));
   }
@@ -623,7 +632,7 @@ class AmphitheatreEditorSlider extends StatefulWidget {
       _AmphitheatreEditorSliderState();
 
   @override
-  void debugFillProperties(final DiagnosticPropertiesBuilder properties) {
+  void debugFillProperties(DiagnosticPropertiesBuilder properties) {
     super.debugFillProperties(properties);
     properties
       ..add(
@@ -727,7 +736,7 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
   }
 
   @override
-  void didUpdateWidget(final AmphitheatreEditorSlider oldWidget) {
+  void didUpdateWidget(AmphitheatreEditorSlider oldWidget) {
     super.didUpdateWidget(oldWidget);
 
     if (oldWidget.style.cropStartIcon != widget.style.cropStartIcon ||
@@ -736,7 +745,7 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
     }
   }
 
-  static Future<ui.Image> _loadRawAssetImage(final RawAssetImage image) async {
+  static Future<ui.Image> _loadRawAssetImage(RawAssetImage image) async {
     if (!image.size.isFinite) {
       throw ArgumentError('RawAssetImage size must be finite.', 'size');
     }
@@ -797,13 +806,13 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
   int get _max => widget.controller.duration.inMilliseconds;
 
   void _processInteraction(
-    final Size size, {
-    required final Offset localPosition,
-    final bool isStart = false,
-    final bool isEnd = false,
+    Size size, {
+    required Offset localPosition,
+    bool isStart = false,
+    bool isEnd = false,
 
     /// Whether the interaction is a simple tap rather than a drag.
-    final bool isTap = false,
+    bool isTap = false,
   }) {
     if (isStart) {
       if (_dragMode == null) {
@@ -851,11 +860,11 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
   }
 
   void _handleNewCropPosition(
-    final Size size, {
-    required final _AmphitheatreEditorSliderDragMode dragMode,
-    required final Offset localPosition,
-    required final Offset localOrigin,
-    required final bool writeHistory,
+    Size size, {
+    required _AmphitheatreEditorSliderDragMode dragMode,
+    required Offset localPosition,
+    required Offset localOrigin,
+    required bool writeHistory,
   }) {
     final Duration duration = widget.controller.duration;
     final int durationMilliseconds = duration.inMilliseconds;
@@ -949,10 +958,10 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
   }
 
   void _handleNewPlayerPosition(
-    final Size size, {
-    required final Offset localPosition,
-    final bool pauseBefore = false,
-    final bool playAfter = false,
+    Size size, {
+    required Offset localPosition,
+    bool pauseBefore = false,
+    bool playAfter = false,
   }) {
     if (pauseBefore) {
       widget.controller.pause();
@@ -984,33 +993,33 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
         child: SizedBox.fromSize(
           size: Size.fromHeight(widget.height),
           child: LayoutBuilder(
-            builder: (final context, final constraints) {
+            builder: (context, constraints) {
               final size = Size(constraints.maxWidth, constraints.maxHeight);
 
               return GestureDetector(
-                onTapDown: (final details) => _processInteraction(
+                onTapDown: (details) => _processInteraction(
                   size,
                   localPosition: details.localPosition,
                   isStart: true,
                   // We can't use isTap here because we don't know if it's a
                   // tap or not!
                 ),
-                onTapUp: (final details) => _processInteraction(
+                onTapUp: (details) => _processInteraction(
                   size,
                   localPosition: details.localPosition,
                   isEnd: true,
                   isTap: true,
                 ),
-                onHorizontalDragStart: (final details) => _processInteraction(
+                onHorizontalDragStart: (details) => _processInteraction(
                   size,
                   localPosition: details.localPosition,
                   isStart: true,
                 ),
-                onHorizontalDragUpdate: (final details) => _processInteraction(
+                onHorizontalDragUpdate: (details) => _processInteraction(
                   size,
                   localPosition: details.localPosition,
                 ),
-                onHorizontalDragEnd: (final details) => _processInteraction(
+                onHorizontalDragEnd: (details) => _processInteraction(
                   size,
                   localPosition: details.localPosition,
                   isEnd: true,
@@ -1045,8 +1054,8 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
       );
 
   _AmphitheatreEditorSliderDragMode computeDragMode(
-    final Offset position, {
-    required final Size size,
+    Offset position, {
+    required Size size,
   }) =>
       _AmphitheatreEditorSliderCropPainter.computeCropDragMode(
         position,
@@ -1071,7 +1080,7 @@ class _AmphitheatreEditorSliderPainter extends CustomPainter {
   });
 
   @override
-  bool operator ==(final Object other) =>
+  bool operator ==(Object other) =>
       other is _AmphitheatreEditorSliderPainter &&
       value == other.value &&
       max == other.max &&
@@ -1081,10 +1090,10 @@ class _AmphitheatreEditorSliderPainter extends CustomPainter {
   int get hashCode => Object.hashAll([value, max, style]);
 
   @override
-  bool shouldRepaint(final _AmphitheatreEditorSliderPainter old) => old != this;
+  bool shouldRepaint(_AmphitheatreEditorSliderPainter old) => old != this;
 
   @override
-  void paint(final Canvas canvas, final Size size) {
+  void paint(Canvas canvas, Size size) {
     final borderRRect = RRect.fromRectAndCorners(
       Offset(style.cropHandleSize + style.borderThickness, 0) &
           Size(
@@ -1133,10 +1142,10 @@ class _AmphitheatreEditorSliderPainter extends CustomPainter {
   /// this is used to interpolate the position relative to the [size] of the
   /// [AmphitheatreEditorSlider].
   static double _valueToPosition({
-    required final AmphitheatreEditorStyle style,
-    required final int value,
-    required final int max,
-    required final Size size,
+    required AmphitheatreEditorStyle style,
+    required int value,
+    required int max,
+    required Size size,
   }) =>
       style.cropHandleSize +
       style.borderThickness +
@@ -1170,7 +1179,7 @@ class _AmphitheatreEditorSliderCropPainter extends CustomPainter {
   });
 
   @override
-  bool operator ==(final Object other) =>
+  bool operator ==(Object other) =>
       other is _AmphitheatreEditorSliderCropPainter &&
       size == other.size &&
       style == other.style &&
@@ -1186,7 +1195,7 @@ class _AmphitheatreEditorSliderCropPainter extends CustomPainter {
       );
 
   @override
-  bool shouldRepaint(final _AmphitheatreEditorSliderCropPainter old) =>
+  bool shouldRepaint(_AmphitheatreEditorSliderCropPainter old) =>
       old != this;
 
   /// Compute the [_AmphitheatreEditorSliderDragMode] of a drag action at the
@@ -1199,12 +1208,12 @@ class _AmphitheatreEditorSliderCropPainter extends CustomPainter {
   ///
   /// See also: [_AmphitheatreEditorSliderPainter._valueToPosition].
   static _AmphitheatreEditorSliderDragMode? computeCropDragMode(
-    final Offset position, {
-    required final AmphitheatreEditorStyle style,
-    required final int? cropStart,
-    required final int? cropEnd,
-    required final int max,
-    required final Size size,
+    Offset position, {
+    required AmphitheatreEditorStyle style,
+    required int? cropStart,
+    required int? cropEnd,
+    required int max,
+    required Size size,
   }) {
     if (cropStart == null || cropEnd == null) return null;
 
@@ -1259,7 +1268,7 @@ class _AmphitheatreEditorSliderCropPainter extends CustomPainter {
   }
 
   @override
-  bool? hitTest(final Offset position) {
+  bool? hitTest(Offset position) {
     final _AmphitheatreEditorSliderDragMode? cropDragMode = computeCropDragMode(
       position,
       style: style,
@@ -1277,7 +1286,7 @@ class _AmphitheatreEditorSliderCropPainter extends CustomPainter {
   }
 
   @override
-  void paint(final Canvas canvas, final Size size) {
+  void paint(Canvas canvas, Size size) {
     if (this.size != size) {
       throw ArgumentError(
         [
@@ -1427,7 +1436,7 @@ class _AmphitheatreEditorSliderCropPainter extends CustomPainter {
   }
 
   Path _computeBaseCornerPath(
-    final Radius radius,
+    Radius radius,
   ) =>
       Path()
         ..moveTo(radius.x, 0)
@@ -1439,8 +1448,8 @@ class _AmphitheatreEditorSliderCropPainter extends CustomPainter {
 
 extension _Flip on Path {
   Path flip({
-    final bool x = false,
-    final bool y = false,
+    bool x = false,
+    bool y = false,
   }) =>
       transform(
         Matrix4.diagonal3Values(

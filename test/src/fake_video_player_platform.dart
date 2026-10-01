@@ -7,7 +7,7 @@ final class FakeVideoPlayerPlatform extends VideoPlayerPlatform {
   /// The duration reported for every created video.
   final Duration duration;
 
-  int _nextPlayerId = 0;
+  var _nextPlayerId = 0;
 
   /// Construct a [FakeVideoPlayerPlatform].
   FakeVideoPlayerPlatform({this.duration = const Duration(seconds: 60)});
@@ -19,14 +19,14 @@ final class FakeVideoPlayerPlatform extends VideoPlayerPlatform {
   Future<void> init() async {}
 
   @override
-  Future<void> dispose(final int playerId) async {}
+  Future<void> dispose(int playerId) async {}
 
   @override
-  Future<int?> createWithOptions(final VideoCreationOptions options) async =>
+  Future<int?> createWithOptions(VideoCreationOptions options) async =>
       _nextPlayerId++;
 
   @override
-  Stream<VideoEvent> videoEventsFor(final int playerId) => Stream.value(
+  Stream<VideoEvent> videoEventsFor(int playerId) => Stream.value(
         VideoEvent(
           eventType: VideoEventType.initialized,
           duration: duration,
@@ -36,33 +36,33 @@ final class FakeVideoPlayerPlatform extends VideoPlayerPlatform {
       );
 
   @override
-  Future<void> setLooping(final int playerId, final bool looping) async {}
+  Future<void> setLooping(int playerId, bool looping) async {}
 
   @override
-  Future<void> play(final int playerId) async {}
+  Future<void> play(int playerId) async {}
 
   @override
-  Future<void> pause(final int playerId) async {}
+  Future<void> pause(int playerId) async {}
 
   @override
-  Future<void> setVolume(final int playerId, final double volume) async {}
+  Future<void> setVolume(int playerId, double volume) async {}
 
   @override
-  Future<void> seekTo(final int playerId, final Duration position) async {}
+  Future<void> seekTo(int playerId, Duration position) async {}
 
   @override
   Future<void> setPlaybackSpeed(
-    final int playerId,
-    final double speed,
+    int playerId,
+    double speed,
   ) async {}
 
   @override
-  Future<Duration> getPosition(final int playerId) async => Duration.zero;
+  Future<Duration> getPosition(int playerId) async => Duration.zero;
 
   @override
-  Widget buildViewWithOptions(final VideoViewOptions options) =>
+  Widget buildViewWithOptions(VideoViewOptions options) =>
       const SizedBox.expand();
 
   @override
-  Future<void> setMixWithOthers(final bool mixWithOthers) async {}
+  Future<void> setMixWithOthers(bool mixWithOthers) async {}
 }

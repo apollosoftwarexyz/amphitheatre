@@ -117,7 +117,7 @@ final class StubAmphitheatrePlatform {
       ..setMockStreamHandler(eventChannel, null);
   }
 
-  Future<Object?> _handleMethodCall(final MethodCall call) async {
+  Future<Object?> _handleMethodCall(MethodCall call) async {
     log.add(call);
 
     void missingImplementation() {
@@ -151,7 +151,7 @@ final class StubAmphitheatrePlatform {
     }
   }
 
-  void _deleteFile(final MethodCall call) {
+  void _deleteFile(MethodCall call) {
     final String path = _arg<String>(call, 'path');
 
     if (failFileDeletion) {
@@ -165,7 +165,7 @@ final class StubAmphitheatrePlatform {
     deletedFiles.add(path);
   }
 
-  void _checkCropVideoDiskSpace(final MethodCall call) {
+  void _checkCropVideoDiskSpace(MethodCall call) {
     _arg<String>(call, 'path');
     _validateCropRange(_arg<int>(call, 'start'), _arg<int>(call, 'end'));
 
@@ -179,7 +179,7 @@ final class StubAmphitheatrePlatform {
     }
   }
 
-  String _startCropVideo(final MethodCall call) {
+  String _startCropVideo(MethodCall call) {
     final String path = _arg<String>(call, 'path');
     final int start = _arg<int>(call, 'start');
     final int end = _arg<int>(call, 'end');
@@ -208,7 +208,7 @@ final class StubAmphitheatrePlatform {
   /// The session bookkeeping is settled before any events are delivered:
   /// ending the stream causes the Dart side to cancel its subscription, and
   /// that cancellation must not observe (and abort) a still-live session.
-  Future<void> completeCropVideo(final String sessionId) async {
+  Future<void> completeCropVideo(String sessionId) async {
     final Completer<MockStreamHandlerEventSink>? sink = _statusSinks[sessionId];
     final StubCropSession session = cropSessions.remove(sessionId)!;
     _pendingExports.remove(sessionId)!.complete(session.outputPath);
@@ -229,7 +229,7 @@ final class StubAmphitheatrePlatform {
 
   /// Reject a crop range whose [start] is after its [end], mirroring the
   /// platform implementations.
-  static void _validateCropRange(final int start, final int end) {
+  static void _validateCropRange(int start, int end) {
     if (start > end) {
       throw PlatformException(
         code: 'INVALID_ARGS',
@@ -239,7 +239,7 @@ final class StubAmphitheatrePlatform {
     }
   }
 
-  Future<String> _awaitCropVideo(final MethodCall call) {
+  Future<String> _awaitCropVideo(MethodCall call) {
     final String sessionId = _arg<String>(call, 'sessionId');
     final Completer<String>? pending = _pendingExports[sessionId];
 
@@ -261,11 +261,11 @@ final class StubAmphitheatrePlatform {
   /// [stage], [quality], and [overrideSessionId] may be specified to override
   /// the respective fields.
   Future<void> emitCropStatus(
-    final String sessionId, {
-    required final double progress,
-    final String stage = 'export',
-    final String? quality,
-    final String? overrideSessionId,
+    String sessionId, {
+    required double progress,
+    String stage = 'export',
+    String? quality,
+    String? overrideSessionId,
   }) async {
     (await _statusSink(sessionId).future).success({
       'sessionId': overrideSessionId ?? sessionId,
@@ -276,16 +276,16 @@ final class StubAmphitheatrePlatform {
   }
 
   /// End the status stream for [sessionId].
-  Future<void> endCropStatus(final String sessionId) async {
+  Future<void> endCropStatus(String sessionId) async {
     (await _statusSink(sessionId).future).endOfStream();
   }
 
-  Completer<MockStreamHandlerEventSink> _statusSink(final String sessionId) =>
+  Completer<MockStreamHandlerEventSink> _statusSink(String sessionId) =>
       _statusSinks.putIfAbsent(sessionId, Completer.new);
 
   void _onStatusListen(
-    final Object? arguments,
-    final MockStreamHandlerEventSink events,
+    Object? arguments,
+    MockStreamHandlerEventSink events,
   ) {
     statusListenArguments.add(arguments);
 
@@ -314,7 +314,7 @@ final class StubAmphitheatrePlatform {
     sink.complete(events);
   }
 
-  void _onStatusCancel(final Object? arguments) {
+  void _onStatusCancel(Object? arguments) {
     final Object? sessionId =
         arguments is Map<Object?, Object?> ? arguments['sessionId'] : null;
 
@@ -341,8 +341,8 @@ final class StubAmphitheatrePlatform {
   /// Throws a [PlatformException] mirroring the error a real platform
   /// implementation produces for missing or invalid arguments.
   static T _arg<T>(
-    final MethodCall call,
-    final String name,
+    MethodCall call,
+    String name,
   ) {
     final Object? arguments = call.arguments;
     final Object? value =

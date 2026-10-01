@@ -5,13 +5,13 @@ import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.stubbing.OngoingStubbing
 import java.io.File
-import kotlin.test.Test
 
 internal class AmphitheatrePluginTest {
   private lateinit var plugin: AmphitheatrePlugin
@@ -67,7 +67,7 @@ internal class AmphitheatrePluginTest {
     plugin.onMethodCall(createCall(mapOf("path" to "/foo/bar", "start" to 1, "end" to null)), mockResult)
     plugin.onMethodCall(createCall(mapOf("path" to "/foo/bar", "start" to null, "end" to null)), mockResult)
 
-    verify(mockResult, times(6)).error("ERR_BAD_PARAMS", "Invalid parameters supplied to cropVideo()", null)
+    verify(mockResult, times(6)).error("INVALID_ARGS", "invalid arguments for cropVideo", null)
   }
 
   /** Not a fan of the backticks... See [Mockito.when] */

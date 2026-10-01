@@ -37,7 +37,7 @@ final class AmphitheatreEditorActionCrop extends AmphitheatreEditorAction {
       {'start': start.inMilliseconds, 'end': end.inMilliseconds};
 
   @override
-  bool operator ==(final Object other) =>
+  bool operator ==(Object other) =>
       other is AmphitheatreEditorActionCrop &&
       start == other.start &&
       end == other.end;
@@ -84,8 +84,8 @@ final class AmphitheatreEditorController with ChangeNotifier {
   /// This allows a user to undo the action. This is not done automatically to
   /// avoid writing unnecessary or excessive history items.
   void _applyNewValue(
-    final AmphitheatreEditorModifications value, {
-    required final bool writeHistory,
+    AmphitheatreEditorModifications value, {
+    required bool writeHistory,
   }) {
     if (_value == value) {
       notifyListeners();
@@ -106,9 +106,9 @@ final class AmphitheatreEditorController with ChangeNotifier {
   ///
   /// See [AmphitheatreEditorActionCrop].
   void crop({
-    required final Duration start,
-    required final Duration end,
-    final bool writeHistory = true,
+    required Duration start,
+    required Duration end,
+    bool writeHistory = true,
   }) =>
       _applyNewValue(
         value.copyWith(
@@ -186,14 +186,14 @@ final class AmphitheatreEditorModifications {
   /// Copy the set of modifications with a new modification - either replacing
   /// or adding the modification depending on whether it already exists.
   AmphitheatreEditorModifications copyWith({
-    final AmphitheatreEditorActionCrop? crop,
+    AmphitheatreEditorActionCrop? crop,
   }) =>
       AmphitheatreEditorModifications(crop: crop ?? this.crop);
 
   /// Copy the set of modifications, only replacing modifications when the new
   /// one is specified and there is not an existing modification of that type.
   AmphitheatreEditorModifications copyWithUnique({
-    final AmphitheatreEditorActionCrop? crop,
+    AmphitheatreEditorActionCrop? crop,
   }) =>
       AmphitheatreEditorModifications(
         crop: crop != null && this.crop == null ? crop : this.crop,
@@ -202,7 +202,7 @@ final class AmphitheatreEditorModifications {
   /// Build a JSON representation of the modifications.
   Map<String, AmphitheatreEditorAction> toJson() => _modifications.fold(
         <String, AmphitheatreEditorAction>{},
-        (final value, final entry) {
+        (value, entry) {
           if (entry == null) return value;
           value[entry.id] = entry;
           return value;
@@ -217,7 +217,7 @@ final class AmphitheatreEditorModifications {
   String toString() => toJsonString();
 
   @override
-  bool operator ==(final Object other) =>
+  bool operator ==(Object other) =>
       other is AmphitheatreEditorModifications && crop == other.crop;
 
   @override

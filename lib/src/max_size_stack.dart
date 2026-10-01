@@ -44,7 +44,7 @@ class MaxSizeStack<E> {
   /// 
   /// If the stack would be larger than the [size] after the element is pushed,
   /// the oldest element in the stack is dropped.
-  void push(final E element) {
+  void push(E element) {
     if (_values.length + 1 > size) {
       _values.removeLast();
     }

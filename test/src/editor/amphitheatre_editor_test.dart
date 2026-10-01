@@ -27,7 +27,7 @@ void main() {
     /// Pump the editor inside an app shell and initialize the video (which
     /// sets the default full-length crop), returning the editor route's
     /// result.
-    Future<Future<String?>> pumpEditor(final WidgetTester tester) async {
+    Future<Future<String?>> pumpEditor(WidgetTester tester) async {
       host = StubAmphitheatrePlatform()
         ..register()
         ..valid = true;
@@ -46,7 +46,7 @@ void main() {
       final NavigatorState navigator = tester.state(find.byType(Navigator));
       final Future<String?> result = navigator.push<String?>(
         MaterialPageRoute<String?>(
-          builder: (final _) => AmphitheatreEditor(controller: controller),
+          builder: (_) => AmphitheatreEditor(controller: controller),
         ),
       );
 
@@ -59,7 +59,7 @@ void main() {
 
     /// Unmount the editor and dispose the video controller, ensuring that no
     /// timers outlive the test.
-    Future<void> unmountEditor(final WidgetTester tester) async {
+    Future<void> unmountEditor(WidgetTester tester) async {
       host.unregister();
       await tester.pumpWidget(const SizedBox.shrink());
       controller.dispose();
@@ -67,7 +67,7 @@ void main() {
     }
 
     /// Apply a non-trivial crop and start the export via the done button.
-    Future<void> startExport(final WidgetTester tester) async {
+    Future<void> startExport(WidgetTester tester) async {
       final AmphitheatreEditorState editor =
           tester.state(find.byType(AmphitheatreEditor));
       editor.editorController.crop(
@@ -81,7 +81,7 @@ void main() {
     }
 
     testWidgets('a successful export pops with the output video path',
-        (final tester) async {
+        (tester) async {
       final Future<String?> result = await pumpEditor(tester);
       await startExport(tester);
 
@@ -105,7 +105,7 @@ void main() {
     });
 
     testWidgets('progress updates are reflected on the exporter screen',
-        (final tester) async {
+        (tester) async {
       final Future<String?> result = await pumpEditor(tester);
       await startExport(tester);
 
@@ -129,12 +129,12 @@ void main() {
     });
 
     testWidgets('a failed export shows the error and restores the editor',
-        (final tester) async {
+        (tester) async {
       final Future<String?> result = await pumpEditor(tester);
       host.hasSufficientDiskSpace = false;
 
       var popped = false;
-      unawaited(result.then((final _) => popped = true));
+      unawaited(result.then((_) => popped = true));
 
       await startExport(tester);
       await tester.pumpAndSettle();
@@ -154,10 +154,10 @@ void main() {
     });
 
     testWidgets('an unimplemented host restores the editor without popping',
-        (final tester) async {
+        (tester) async {
       final Future<String?> result = await pumpEditor(tester);
       var popped = false;
-      unawaited(result.then((final _) => popped = true));
+      unawaited(result.then((_) => popped = true));
 
       // Simulate a platform without the crop implementation, which raises a
       // MissingPluginException (notably not a PlatformException).
@@ -176,7 +176,7 @@ void main() {
     });
 
     testWidgets('a full-length crop pops with the input path without cropping',
-        (final tester) async {
+        (tester) async {
       final Future<String?> result = await pumpEditor(tester);
 
       // The default crop spans the entire video, so no crop is needed.
@@ -196,7 +196,7 @@ void main() {
 
       expect(await result, equals('/videos/example.mp4'));
       expect(
-        host.log.where((final call) => call.method == 'startCropVideo'),
+        host.log.where((call) => call.method == 'startCropVideo'),
         isEmpty,
       );
 

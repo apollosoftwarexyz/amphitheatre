@@ -33,10 +33,10 @@ class AmphitheatreVideoInfo {
   List<Object?> get _nullableElements => [title, subtitle, description];
 
   /// Returns true if none of the video info elements are set.
-  bool get isEmpty => _nullableElements.every((final item) => item == null);
+  bool get isEmpty => _nullableElements.every((item) => item == null);
 
   /// Returns true if any of the video info elements are set.
-  bool get isNotEmpty => _nullableElements.any((final item) => item != null);
+  bool get isNotEmpty => _nullableElements.any((item) => item != null);
 }
 
 /// Controls the Amphitheatre video player.
@@ -117,21 +117,20 @@ class AmphitheatreController with ChangeNotifier {
   /// Returns the aspect ratio of the video.
   double get aspectRatio => controller.value.aspectRatio;
 
-  bool _initialized = false;
+  var _initialized = false;
 
   /// Initialize the underlying [controller].
-  void initialize({final bool autoPlay = true, final bool looping = false}) {
+  void initialize({bool autoPlay = true, bool looping = false}) {
     // Ensure the controller is not re-initialized when it is already
     // initialized.
     if (_initialized) return;
-
     _initialized = true;
 
     controller.addListener(_onControllerUpdate);
     unawaited(controller.setLooping(looping));
 
     unawaited(
-      controller.initialize().then((final _) {
+      controller.initialize().then((_) {
         if (autoPlay) play();
       }),
     );
@@ -146,15 +145,15 @@ class AmphitheatreController with ChangeNotifier {
 
   /// Instruct the [controller] to start playing the video from the start.
   void replay() => unawaited(
-        controller.seekTo(Duration.zero).then((final _) => controller.play()),
+        controller.seekTo(Duration.zero).then((_) => controller.play()),
       );
 
   /// Instruct the [controller] to seek by [delta], relative to the current
   /// position.
-  void seek(final Duration delta) => seekTo(controller.value.position + delta);
+  void seek(Duration delta) => seekTo(controller.value.position + delta);
 
   /// Instruct the [controller] to seek to the given [time].
-  void seekTo(final Duration time) => unawaited(() async {
+  void seekTo(Duration time) => unawaited(() async {
         if (controller.value.isCompleted) {
           await controller.play();
         }
@@ -166,8 +165,8 @@ class AmphitheatreController with ChangeNotifier {
 
   /// Dispose the underlying [controller], then the [AmphitheatreController].
   @override
-  void dispose() {
-    unawaited(controller.dispose());
+  Future<void> dispose() async {
+    await controller.dispose();
     super.dispose();
 
     // As everything is now disposed, mark that the controller can be
@@ -189,7 +188,7 @@ class AmphitheatreController with ChangeNotifier {
   /// The returned [AmphitheatreVideoPath] specifies a normalized file path with
   /// an indication of whether the temporary fallback described above was used.
   Future<AmphitheatreVideoPath> getVideoPath({
-    final bool temporaryFileFallback = true,
+    bool temporaryFileFallback = true,
   }) async {
     if (!controller.value.isInitialized) {
       throw StateError('The controller has not been initialized yet.');

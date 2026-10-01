@@ -22,7 +22,7 @@ const String kExceedsDiskSpaceErrorCode = 'EXCEEDS_DISK_SPACE';
 ///
 /// The primary purpose of the platform interface is to make use of
 /// OS/environment-provided multimedia capabilities.
-void setAmphitheatrePlatform(final AmphitheatrePlatform? platform) {
+void setAmphitheatrePlatform(AmphitheatrePlatform? platform) {
   final AmphitheatrePlatform instance =
       platform ?? AmphitheatrePlatformMethodChannel();
 
@@ -37,6 +37,14 @@ void setAmphitheatrePlatform(final AmphitheatrePlatform? platform) {
 /// [Amphitheatre]) should have no need to invoke this function.
 AmphitheatrePlatform getAmphitheatrePlatform() =>
     AmphitheatrePlatform._instance;
+
+/// Returns the number of bytes available, as reported by the
+/// [AmphitheatrePlatform].
+///
+/// You must ensure [AmphitheatrePlatform.ensureInitialized] has been invoked
+/// before calling this method.
+Future<int> getAvailableDiskSpace() =>
+    getAmphitheatrePlatform().getAvailableDiskSpace();
 
 /// The stage in the cropping process.
 ///
@@ -55,9 +63,9 @@ enum AmphitheatreCropVideoStage {
   ///
   /// If the name is not recognized, [AmphitheatreCropVideoStage.unknown] is
   /// returned instead.
-  static AmphitheatreCropVideoStage withName(final String name) =>
+  static AmphitheatreCropVideoStage withName(String name) =>
       AmphitheatreCropVideoStage.values.firstWhere(
-        (final stage) => stage.name == name,
+        (stage) => stage.name == name,
         orElse: () => unknown,
       );
 }
@@ -86,9 +94,9 @@ enum AmphitheatreCropVideoQuality {
   ///
   /// If the quality value is not recognized,
   /// [AmphitheatreCropVideoQuality.unknown] is returned instead.
-  static AmphitheatreCropVideoQuality withValue(final String rawValue) =>
+  static AmphitheatreCropVideoQuality withValue(String rawValue) =>
       AmphitheatreCropVideoQuality.values.firstWhere(
-        (final quality) => quality.name == rawValue,
+        (quality) => quality.name == rawValue,
         orElse: () => unknown,
       );
 }
@@ -173,11 +181,11 @@ abstract class AmphitheatrePlatform extends PlatformInterface {
   String get pathSeparator;
 
   /// Joins two path segments together.
-  String joinPath(final String base, final String next) =>
+  String joinPath(String base, String next) =>
       '$base$pathSeparator$next';
 
   /// Splits a path into its constituent segments.
-  List<String> splitPath(final String path) => path.split(pathSeparator);
+  List<String> splitPath(String path) => path.split(pathSeparator);
 
   /// Ensure the platform interface has been initialized.
   ///
@@ -191,8 +199,12 @@ abstract class AmphitheatrePlatform extends PlatformInterface {
   /// videos that are being processed.
   Future<String> getTemporaryDirectory();
 
+  /// Get the number of bytes available for media. This is checked against the
+  /// volume used for [getTemporaryDirectory].
+  Future<int> getAvailableDiskSpace();
+
   /// Delete the file at the given [path].
-  Future<void> deleteFile(final String path);
+  Future<void> deleteFile(String path);
 
   /// Crop the video at the [path] to start at [start] milliseconds from the
   /// start of the original video and similarly end at [end] milliseconds.
@@ -206,12 +218,12 @@ abstract class AmphitheatrePlatform extends PlatformInterface {
   /// The returned future completes when the crop operation has started. See
   /// [AmphitheatreCropVideoSession] for details.
   Future<AmphitheatreCropVideoSession> cropVideo({
-    required final String path,
-    required final int start,
-    required final int end,
-    required final AmphitheatreDiskSpacePolicy diskSpacePolicy,
-    final OnExceedsDiskSpace? onExceedsDiskSpace,
-    final AmphitheatreCropVideoQuality? quality,
+    required String path,
+    required int start,
+    required int end,
+    required AmphitheatreDiskSpacePolicy diskSpacePolicy,
+    OnExceedsDiskSpace? onExceedsDiskSpace,
+    AmphitheatreCropVideoQuality? quality,
   });
 }
 
@@ -295,17 +307,21 @@ final class AmphitheatrePlatformMethodChannel extends AmphitheatrePlatform {
       (await _platform.invokeMethod<String>('getTemporaryDirectory'))!;
 
   @override
-  Future<void> deleteFile(final String path) async =>
+  Future<int> getAvailableDiskSpace() async =>
+      (await _platform.invokeMethod<int>('getAvailableDiskSpace'))!;
+
+  @override
+  Future<void> deleteFile(String path) async =>
       _platform.invokeMethod('deleteFile', {'path': path});
 
   @override
   Future<AmphitheatreCropVideoSession> cropVideo({
-    required final String path,
-    required final int start,
-    required final int end,
-    required final AmphitheatreDiskSpacePolicy diskSpacePolicy,
-    final OnExceedsDiskSpace? onExceedsDiskSpace,
-    final AmphitheatreCropVideoQuality? quality,
+    required String path,
+    required int start,
+    required int end,
+    required AmphitheatreDiskSpacePolicy diskSpacePolicy,
+    OnExceedsDiskSpace? onExceedsDiskSpace,
+    AmphitheatreCropVideoQuality? quality,
   }) async {
     if (diskSpacePolicy != AmphitheatreDiskSpacePolicy.ignore) {
       try {
@@ -348,17 +364,17 @@ class _MethodChannelCropVideoSession implements AmphitheatreCropVideoSession {
 
   _MethodChannelCropVideoSession({
     required this.id,
-    required final MethodChannel channel,
-    required final EventChannel eventChannel,
+    required MethodChannel channel,
+    required EventChannel eventChannel,
   })  : _future = channel.invokeMethod<String>('awaitCropVideo', {
           'sessionId': id,
-        }).then<String>((final output) => output!)
+        }).then<String>((output) => output!)
           ..ignore(),
         _events =
             eventChannel.receiveBroadcastStream({'sessionId': id}).transform(
           StreamTransformer<dynamic,
               _MethodChannelCropVideoStatus>.fromHandlers(
-            handleData: (final rawEvent, final sink) {
+            handleData: (rawEvent, sink) {
               sink.add(
                 _MethodChannelCropVideoStatus.from(
                   rawEvent as Map<dynamic, dynamic>,
@@ -366,7 +382,7 @@ class _MethodChannelCropVideoSession implements AmphitheatreCropVideoSession {
               );
             },
           ),
-        ).where((final event) => event.sessionId == id);
+        ).where((event) => event.sessionId == id);
 
   @override
   Future<String> get future => _future;
@@ -396,7 +412,7 @@ class _MethodChannelCropVideoStatus implements AmphitheatreCropVideoStatus {
   });
 
   factory _MethodChannelCropVideoStatus.from(
-    final Map<dynamic, dynamic> map,
+    Map<dynamic, dynamic> map,
   ) =>
       _MethodChannelCropVideoStatus(
         sessionId: map['sessionId'] as String,

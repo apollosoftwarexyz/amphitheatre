@@ -24,8 +24,8 @@ typedef AmphitheatreComponentBuilder = Widget Function(
 );
 
 Widget _buildCloseButton(
-  final AmphitheatreController controller,
-  final bool showControls,
+  AmphitheatreController controller,
+  bool showControls,
 ) =>
     AmphitheatreCloseButton(
       show: showControls
@@ -35,26 +35,26 @@ Widget _buildCloseButton(
     );
 
 Widget _buildReplayButton(
-  final AmphitheatreController controller,
-  final bool showControls,
+  AmphitheatreController controller,
+  bool showControls,
 ) =>
     AmphitheatreReplayButton(controller: controller);
 
 Widget _buildProgressSlider(
-  final AmphitheatreController controller,
-  final bool showControls,
+  AmphitheatreController controller,
+  bool showControls,
 ) =>
     AmphitheatreProgressSlider(controller: controller);
 
 Widget _buildVideoControls(
-  final AmphitheatreController controller,
-  final bool showControls,
+  AmphitheatreController controller,
+  bool showControls,
 ) =>
     AmphitheatreVideoControls(controller: controller);
 
 Widget _buildVideoInfo(
-  final AmphitheatreController controller,
-  final bool showControls,
+  AmphitheatreController controller,
+  bool showControls,
 ) =>
     AmphitheatreVideoInfoDisplay(controller: controller);
 
@@ -65,8 +65,8 @@ Widget _buildVideoInfo(
 /// used when an [Amphitheatre] is launched.
 typedef AmphitheatreRouteBuilder = Route<void> Function(Widget child);
 
-Route<void> _defaultAmphitheatreRouteBuilder(final Widget child) =>
-    MaterialPageRoute<void>(builder: (final _) => child);
+Route<void> _defaultAmphitheatreRouteBuilder(Widget child) =>
+    MaterialPageRoute<void>(builder: (_) => child);
 
 /// The Amphitheatre video player.
 class Amphitheatre extends StatefulWidget {
@@ -176,13 +176,13 @@ class Amphitheatre extends StatefulWidget {
   /// API.
   static void launch(
     BuildContext context, {
-    required final AmphitheatreController controller,
-    final AmphitheatreRouteBuilder routeBuilder =
+    required AmphitheatreController controller,
+    AmphitheatreRouteBuilder routeBuilder =
         _defaultAmphitheatreRouteBuilder,
-    final bool useRootNavigator = false,
-    final bool enableToggleControls = true,
-    final bool enableReplayButton = true,
-    final bool autoPlay = true,
+    bool useRootNavigator = false,
+    bool enableToggleControls = true,
+    bool enableReplayButton = true,
+    bool autoPlay = true,
   }) {
     final Widget child = Amphitheatre.consume(
       controller: controller,
@@ -201,7 +201,7 @@ class Amphitheatre extends StatefulWidget {
   State<Amphitheatre> createState() => _AmphitheatreState();
 
   @override
-  void debugFillProperties(final DiagnosticPropertiesBuilder properties) {
+  void debugFillProperties(DiagnosticPropertiesBuilder properties) {
     super.debugFillProperties(properties);
     properties
       ..add(
@@ -258,7 +258,7 @@ class Amphitheatre extends StatefulWidget {
 }
 
 class _AmphitheatreState extends State<Amphitheatre> {
-  bool _showControls = true;
+  var _showControls = true;
 
   @override
   void initState() {
@@ -279,16 +279,20 @@ class _AmphitheatreState extends State<Amphitheatre> {
   }
 
   @override
-  void dispose() {
-    if (widget.consumedController) {
-      widget.controller.dispose();
-    } else {
-      widget.controller.removeListener(_onControllerUpdate);
-    }
+  Future<void> dispose() async {
+    widget.controller.removeListener(_onControllerUpdate);
     super.dispose();
+
+    if (widget.consumedController) {
+      await widget.controller.dispose();
+    }
   }
 
-  void _onControllerUpdate() => setState(() {});
+  void _onControllerUpdate() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
   void _toggleControls() {
     if ((widget.enableReplayButton && !widget.controller.isCompleted) &&
         widget.enableToggleControls) {
@@ -378,7 +382,7 @@ class _AmphitheatreState extends State<Amphitheatre> {
         ),
       );
 
-  Widget _controlsWrapper(final List<Widget> controls) {
+  Widget _controlsWrapper(List<Widget> controls) {
     final bool showControls = _showControls &&
         (!widget.controller.isCompleted || !widget.enableReplayButton);
 

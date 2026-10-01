@@ -50,7 +50,7 @@ void main() {
         platform.deleteFile('/videos/example.mp4'),
         throwsA(
           isA<PlatformException>()
-              .having((final e) => e.code, 'code', 'FILE_REMOVAL_FAILED'),
+              .having((e) => e.code, 'code', 'FILE_REMOVAL_FAILED'),
         ),
       );
       expect(host.deletedFiles, isEmpty);
@@ -66,7 +66,7 @@ void main() {
       );
 
       final MethodCall call =
-          host.log.singleWhere((final call) => call.method == 'startCropVideo');
+          host.log.singleWhere((call) => call.method == 'startCropVideo');
       expect(
         call.arguments,
         equals({
@@ -101,7 +101,7 @@ void main() {
 
     group('status events', () {
       Future<AmphitheatreCropVideoSession> startSession({
-        final AmphitheatreCropVideoQuality? quality,
+        AmphitheatreCropVideoQuality? quality,
       }) =>
           platform.cropVideo(
             path: '/videos/example.mp4',
@@ -114,7 +114,7 @@ void main() {
       test('subscribing passes the session ID to the host', () async {
         final AmphitheatreCropVideoSession session = await startSession();
         final StreamSubscription<AmphitheatreCropVideoStatus> subscription =
-            session.status.listen((final _) {});
+            session.status.listen((_) {});
 
         // emitCropStatus completes once the host has a bound listener.
         await host.emitCropStatus(session.id, progress: 0);
@@ -137,20 +137,20 @@ void main() {
           session.status,
           emits(
             isA<AmphitheatreCropVideoStatus>()
-                .having((final s) => s.sessionId, 'sessionId', session.id)
+                .having((s) => s.sessionId, 'sessionId', session.id)
                 .having(
-                  (final s) => s.stage,
+                  (s) => s.stage,
                   'stage',
                   AmphitheatreCropVideoStage.export,
                 )
                 .having(
-                  (final s) => s.quality,
+                  (s) => s.quality,
                   'quality',
                   AmphitheatreCropVideoQuality.presetHD,
                 )
-                .having((final s) => s.progress, 'progress', 0.5)
+                .having((s) => s.progress, 'progress', 0.5)
                 .having(
-                  (final s) => s.toString(),
+                  (s) => s.toString(),
                   'toString',
                   'AmphitheatreCropVideoStatus[sessionId=${session.id}, stage=export, quality=presetHD, progress=0.5]',
                 ),
@@ -168,7 +168,7 @@ void main() {
           session.status,
           emits(
             isA<AmphitheatreCropVideoStatus>().having(
-              (final s) => s.quality,
+              (s) => s.quality,
               'quality',
               AmphitheatreCropVideoQuality.presetFullHD,
             ),
@@ -187,12 +187,12 @@ void main() {
           emits(
             isA<AmphitheatreCropVideoStatus>()
                 .having(
-                  (final s) => s.stage,
+                  (s) => s.stage,
                   'stage',
                   AmphitheatreCropVideoStage.unknown,
                 )
                 .having(
-                  (final s) => s.quality,
+                  (s) => s.quality,
                   'quality',
                   AmphitheatreCropVideoQuality.unknown,
                 ),
@@ -251,7 +251,7 @@ void main() {
           session.status,
           emitsInOrder([
             isA<AmphitheatreCropVideoStatus>()
-                .having((final s) => s.progress, 'progress', 1),
+                .having((s) => s.progress, 'progress', 1),
             emitsDone,
           ]),
         );
@@ -275,7 +275,7 @@ void main() {
           session.status,
           emitsError(
             isA<PlatformException>()
-                .having((final e) => e.code, 'code', 'UNKNOWN_SESSION'),
+                .having((e) => e.code, 'code', 'UNKNOWN_SESSION'),
           ),
         );
       });
@@ -283,7 +283,7 @@ void main() {
       test('cancelling the subscription cancels the crop session', () async {
         final AmphitheatreCropVideoSession session = await startSession();
         final StreamSubscription<AmphitheatreCropVideoStatus> subscription =
-            session.status.listen((final _) {});
+            session.status.listen((_) {});
 
         await host.emitCropStatus(session.id, progress: 0);
         await subscription.cancel();
@@ -295,7 +295,7 @@ void main() {
           session.future,
           throwsA(
             isA<PlatformException>()
-                .having((final e) => e.code, 'code', 'EXPORT_CANCELLED'),
+                .having((e) => e.code, 'code', 'EXPORT_CANCELLED'),
           ),
         );
       });
@@ -303,8 +303,8 @@ void main() {
 
     group('disk space policy', () {
       Future<AmphitheatreCropVideoSession> startSession(
-        final AmphitheatreDiskSpacePolicy diskSpacePolicy, {
-        final OnExceedsDiskSpace? onExceedsDiskSpace,
+        AmphitheatreDiskSpacePolicy diskSpacePolicy, {
+        OnExceedsDiskSpace? onExceedsDiskSpace,
       }) =>
           platform.cropVideo(
             path: '/videos/example.mp4',
@@ -319,7 +319,7 @@ void main() {
 
         expect(
           host.log.where(
-            (final call) => call.method == 'checkCropVideoDiskSpace',
+            (call) => call.method == 'checkCropVideoDiskSpace',
           ),
           isEmpty,
         );
@@ -329,7 +329,7 @@ void main() {
         await startSession(AmphitheatreDiskSpacePolicy.warnIfExceeds);
 
         final MethodCall call = host.log.singleWhere(
-          (final call) => call.method == 'checkCropVideoDiskSpace',
+          (call) => call.method == 'checkCropVideoDiskSpace',
         );
         expect(
           call.arguments,
@@ -378,7 +378,7 @@ void main() {
         await startSession(AmphitheatreDiskSpacePolicy.abortIfExceeds);
 
         final List<String> methods =
-            host.log.map((final call) => call.method).toList();
+            host.log.map((call) => call.method).toList();
         expect(
           methods.indexOf('checkCropVideoDiskSpace'),
           lessThan(methods.indexOf('startCropVideo')),
@@ -397,18 +397,18 @@ void main() {
           throwsA(
             isA<PlatformException>()
                 .having(
-                  (final e) => e.code,
+                  (e) => e.code,
                   'code',
                   kExceedsDiskSpaceErrorCode,
                 )
-                .having((final e) => e.message, 'message', isNotNull),
+                .having((e) => e.message, 'message', isNotNull),
           ),
         );
 
         expect(exceeded, equals([AmphitheatreDiskSpacePolicy.abortIfExceeds]));
         expect(host.cropSessions, isEmpty);
         expect(
-          host.log.where((final call) => call.method == 'startCropVideo'),
+          host.log.where((call) => call.method == 'startCropVideo'),
           isEmpty,
         );
       });
@@ -429,7 +429,7 @@ void main() {
           ),
           throwsA(
             isA<PlatformException>()
-                .having((final e) => e.code, 'code', 'INVALID_ARGS'),
+                .having((e) => e.code, 'code', 'INVALID_ARGS'),
           ),
         );
 

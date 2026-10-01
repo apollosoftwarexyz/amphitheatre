@@ -12,7 +12,7 @@ import 'package:flutter/widgets.dart';
 /// supported), this falls back to ordinary non-CS PRNG. Otherwise, this
 /// acquires [Random.secure] and preserves the normal behavior of throwing if it
 /// is not supported.
-Random getRandom({final bool permitFallback = true}) {
+Random getRandom({bool permitFallback = true}) {
   try {
     return Random.secure();
   } on UnsupportedError catch (_) {
@@ -27,7 +27,7 @@ Random getRandom({final bool permitFallback = true}) {
 /// Byte array extensions for [Random].
 extension RandomBytes on Random {
   /// Generates a [Uint8List] of bytes of the specified length.
-  Uint8List nextBytes(final int length) {
+  Uint8List nextBytes(int length) {
     final result = Uint8List(length);
     for (var i = 0; i < length; i++) {
       result[i] = nextInt(256);
@@ -36,7 +36,7 @@ extension RandomBytes on Random {
   }
 
   /// Generates a base64 string, from bytes of the given length.
-  String nextString(final int length) => base64.encode(nextBytes(length));
+  String nextString(int length) => base64.encode(nextBytes(length));
 }
 
 /// Formatting extensions for [Duration]s.
@@ -50,7 +50,7 @@ extension FormatDuration on Duration {
   ///
   /// If [hours] is not specified, the hours are included automatically when the
   /// Duration [hasHours].
-  String format({final bool? hours}) => [
+  String format({bool? hours}) => [
         if (hours ?? hasHours) inHours.toString().padLeft(2, '0'),
         inMinutes.remainder(60).toString().padLeft(2, '0'),
         inSeconds.remainder(60).toString().padLeft(2, '0'),

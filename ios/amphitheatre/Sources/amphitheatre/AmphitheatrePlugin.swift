@@ -213,13 +213,18 @@ public class AmphitheatrePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
                 throw FlutterError(code: "INVALID_ARGS", message: "invalid arguments for deleteFile", details: nil)
             }
 
+            if path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                throw FlutterError(code: "INVALID_PATH", message: "invalid path specified for deleteFile", details: nil)
+            }
+
             return DeleteFileArgs(path: path)
         }
     }
 
-    private func deleteFile(args: DeleteFileArgs) throws(FlutterError) {
+    private func deleteFile(args: DeleteFileArgs) throws(FlutterError) -> Void? {
         do {
             try FileManager.default.removeItem(atPath: args.path)
+            return nil
         } catch {
             throw FlutterError(code: "FILE_REMOVAL_FAILED", message: "failed to delete file at path", details: args.path)
         }
@@ -246,13 +251,15 @@ public class AmphitheatrePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         // Return the path to the directory, on success.
         return path
     }
-    
-    private func getAvailableDiskSpace() throws(FlutterError) -> Long {
-        do {
-            return try FileManager.default.temporaryDirectory.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
-        } catch {
-            throw FlutterError(code: "GET_AVAILABLE_DISK_SPACE_FAILED", message: "failed to determine number of available bytes on disk", details: nil)
+
+    private func getAvailableDiskSpace() throws(FlutterError) -> Int64 {
+        let resourceValues = try? FileManager.default.temporaryDirectory.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+        
+        guard let availableBytes = resourceValues?.volumeAvailableCapacityForImportantUsage else {
+            throw FlutterError(code: "PRECONDITION_FAIL", message: "the available disk space could not be determined", details: nil)
         }
+        
+        return availableBytes
     }
 
     public enum CropVideoQuality: String {
@@ -261,7 +268,7 @@ public class AmphitheatrePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         case highest = "highest"
         case passthrough = "passthrough"
 
-        static let defaultQuality: CropVideoQuality = CropVideoQuality.presetFullHD
+        static let defaultQuality: CropVideoQuality = CropVideoQuality.passthrough
 
         func asExportPreset() -> String {
             switch (self) {
@@ -325,7 +332,7 @@ public class AmphitheatrePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
     /// on the volume holding the plugin's temporary directory (where the
     /// output is written), and `PRECONDITION_FAIL` if the estimate cannot be
     /// computed.
-    public func checkCropVideoDiskSpace(args: CropVideoArgs) async throws(FlutterError) {
+    public func checkCropVideoDiskSpace(args: CropVideoArgs) async throws(FlutterError) -> Void? {
         do {
             // Ensure the specified path exists and is not a directory.
             var isDirectory: ObjCBool = false
@@ -367,22 +374,17 @@ public class AmphitheatrePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             // the proportion of the video that the crop keeps. The crop
             // range is clamped to the video's duration.
             let cropMs = min(args.end - args.start, durationMs)
-            let (scaledSize, overflow) = fileSize.multipliedReportingOverflow(by: cropMs)
+            let (requiredBytes, overflow) = fileSize.multipliedReportingOverflow(by: cropMs / durationMs)
             if overflow {
                 throw FlutterError(code: "PRECONDITION_FAIL", message: "the video is too large to process", details: [
                     "fileSize": Int64(clamping: fileSize),
                     "cropMs": Int64(clamping: cropMs),
                 ])
             }
-            let requiredBytes = scaledSize / durationMs
 
             // Measure the free space available on the volume that will hold
             // the output (the plugin's temporary directory).
-            let temporaryDirectory = try getTemporaryDirectory()
-            let resourceValues = try URL(fileURLWithPath: temporaryDirectory).resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
-            guard let availableBytes = resourceValues.volumeAvailableCapacityForImportantUsage else {
-                throw FlutterError(code: "PRECONDITION_FAIL", message: "the available disk space could not be determined", details: nil)
-            }
+            let availableBytes = try getAvailableDiskSpace()
 
             if requiredBytes > UInt64(clamping: availableBytes) {
                 throw FlutterError(code: "EXCEEDS_DISK_SPACE", message: "There is not enough free space on this device to process the video.", details: [
@@ -390,6 +392,8 @@ public class AmphitheatrePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
                     "availableBytes": availableBytes,
                 ])
             }
+            
+            return nil
         } catch let error as FlutterError {
             throw error
         } catch {
@@ -400,11 +404,6 @@ public class AmphitheatrePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
     @MainActor
     public func startCropVideo(args: CropVideoArgs) async throws(FlutterError) -> String {
         let sessionId = getNewSessionId()
-
-        // If the session ID is already registered, fail.
-        if sessions.keys.contains(sessionId) {
-            throw FlutterError(code: "ALREADY_BOUND", message: "the given session ID is already registered", details: nil)
-        }
 
         // Ensure the specified path exists and is not a directory.
         var isDirectory: ObjCBool = false
@@ -452,7 +451,9 @@ public class AmphitheatrePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         }
 
         exportSession.timeRange = timeRange
-        exportSession.shouldOptimizeForNetworkUse = true
+
+        // TODO(SamJakob): make this configurable
+        exportSession.shouldOptimizeForNetworkUse = false
 
         // Start the file export.
         let task = AmphitheatreExportTask {
