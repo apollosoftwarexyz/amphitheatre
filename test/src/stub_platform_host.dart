@@ -90,31 +90,95 @@ final class StubAmphitheatrePlatform {
 
   int _nextSessionId = 0;
 
+  /// The status event channel's backing controller, while registered.
+  ///
+  /// Owned here rather than registered via
+  /// `TestDefaultBinaryMessenger.setMockStreamHandler` because that helper
+  /// adds `controller.close` as a tear-down unconditionally; once
+  /// [MockStreamHandlerEventSink.endOfStream] has closed the controller, the
+  /// tear-down waits on a done future whose listeners live in the test's
+  /// fake-async zone and never run, so the test hangs (flutter/flutter#190807).
+  /// Remove this and go back to `setMockStreamHandler` once the fix lands.
+  // Closed in [_unregisterStatusStream], which the lint cannot see.
+  // ignore: close_sinks
+  StreamController<Object?>? _statusController;
+
+  /// Forwards [_statusController] events onto the platform channel.
+  StreamSubscription<Object?>? _statusForwarder;
+
   /// Construct a [StubAmphitheatrePlatform].
-  StubAmphitheatrePlatform({
-    this.temporaryDirectory = kMockTemporaryDirectory,
-  });
+  StubAmphitheatrePlatform({this.temporaryDirectory = kMockTemporaryDirectory});
 
   /// Register the stub as the handler for the plugin's method channel.
   ///
   /// Call this in `setUp`, and [unregister] in `tearDown`.
   void register() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-      ..setMockMethodCallHandler(channel, _handleMethodCall)
-      ..setMockStreamHandler(
-        eventChannel,
-        MockStreamHandler.inline(
-          onListen: _onStatusListen,
-          onCancel: _onStatusCancel,
-        ),
-      );
+        .setMockMethodCallHandler(channel, _handleMethodCall);
+    _registerStatusStream();
   }
 
   /// Unregister the stub as the handler for the plugin's method channel.
   void unregister() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       ..setMockMethodCallHandler(channel, null)
-      ..setMockStreamHandler(eventChannel, null);
+      ..setMockMessageHandler(eventChannel.name, null);
+    _unregisterStatusStream();
+  }
+
+  /// Equivalent of `TestDefaultBinaryMessenger.setMockStreamHandler` for
+  /// [eventChannel], minus the unguarded close in tear-down (see
+  /// [_statusController]).
+  void _registerStatusStream() {
+    final TestDefaultBinaryMessenger messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    // Closed in [_unregisterStatusStream], which the lint cannot see.
+    // ignore: close_sinks
+    final StreamController<Object?> controller = _statusController =
+        StreamController<Object?>();
+
+    messenger.setMockMethodCallHandler(
+      MethodChannel(eventChannel.name, eventChannel.codec),
+      (MethodCall call) async => switch (call.method) {
+        'listen' => _onStatusListen(
+          call.arguments,
+          MockStreamHandlerEventSink(controller.sink),
+        ),
+        'cancel' => _onStatusCancel(call.arguments),
+        _ => throw UnimplementedError('Method ${call.method} not implemented'),
+      },
+    );
+
+    void forward(ByteData? message) =>
+        messenger.handlePlatformMessage(eventChannel.name, message, null);
+
+    _statusForwarder = controller.stream.listen(
+      (Object? event) =>
+          forward(eventChannel.codec.encodeSuccessEnvelope(event)),
+      onError: (Object? error) {
+        if (error is! PlatformException) {
+          throw ArgumentError('Stream error must be a PlatformException');
+        }
+        forward(
+          eventChannel.codec.encodeErrorEnvelope(
+            code: error.code,
+            message: error.message,
+            details: error.details,
+          ),
+        );
+      },
+      onDone: () => forward(null),
+    );
+  }
+
+  void _unregisterStatusStream() {
+    final StreamController<Object?>? controller = _statusController;
+    _statusController = null;
+    unawaited(_statusForwarder?.cancel());
+    _statusForwarder = null;
+    if (controller != null && !controller.isClosed) {
+      unawaited(controller.close());
+    }
   }
 
   Future<Object?> _handleMethodCall(MethodCall call) async {
@@ -172,7 +236,8 @@ final class StubAmphitheatrePlatform {
     if (!hasSufficientDiskSpace) {
       throw PlatformException(
         code: 'EXCEEDS_DISK_SPACE',
-        message: 'There is not enough free space on this device to process '
+        message:
+            'There is not enough free space on this device to process '
             'the video.',
         details: {'requiredBytes': 2048, 'availableBytes': 1024},
       );
@@ -233,7 +298,8 @@ final class StubAmphitheatrePlatform {
     if (start > end) {
       throw PlatformException(
         code: 'INVALID_ARGS',
-        message: "Invalid arguments for cropVideo: 'start' must not be after "
+        message:
+            "Invalid arguments for cropVideo: 'start' must not be after "
             "'end'.",
       );
     }
@@ -283,14 +349,12 @@ final class StubAmphitheatrePlatform {
   Completer<MockStreamHandlerEventSink> _statusSink(String sessionId) =>
       _statusSinks.putIfAbsent(sessionId, Completer.new);
 
-  void _onStatusListen(
-    Object? arguments,
-    MockStreamHandlerEventSink events,
-  ) {
+  void _onStatusListen(Object? arguments, MockStreamHandlerEventSink events) {
     statusListenArguments.add(arguments);
 
-    final Object? sessionId =
-        arguments is Map<Object?, Object?> ? arguments['sessionId'] : null;
+    final Object? sessionId = arguments is Map<Object?, Object?>
+        ? arguments['sessionId']
+        : null;
 
     if (sessionId is! String || !cropSessions.containsKey(sessionId)) {
       events.error(
@@ -315,8 +379,9 @@ final class StubAmphitheatrePlatform {
   }
 
   void _onStatusCancel(Object? arguments) {
-    final Object? sessionId =
-        arguments is Map<Object?, Object?> ? arguments['sessionId'] : null;
+    final Object? sessionId = arguments is Map<Object?, Object?>
+        ? arguments['sessionId']
+        : null;
 
     if (sessionId is String) {
       cancelledSessions.add(sessionId);
@@ -325,7 +390,9 @@ final class StubAmphitheatrePlatform {
       // Cancelling the status subscription cancels the crop operation and
       // discards the session.
       if (cropSessions.remove(sessionId) != null) {
-        _pendingExports.remove(sessionId)!.completeError(
+        _pendingExports
+            .remove(sessionId)!
+            .completeError(
               PlatformException(
                 code: 'EXPORT_CANCELLED',
                 message: 'The export session was cancelled.',
@@ -340,13 +407,11 @@ final class StubAmphitheatrePlatform {
   ///
   /// Throws a [PlatformException] mirroring the error a real platform
   /// implementation produces for missing or invalid arguments.
-  static T _arg<T>(
-    MethodCall call,
-    String name,
-  ) {
+  static T _arg<T>(MethodCall call, String name) {
     final Object? arguments = call.arguments;
-    final Object? value =
-        arguments is Map<Object?, Object?> ? arguments[name] : null;
+    final Object? value = arguments is Map<Object?, Object?>
+        ? arguments[name]
+        : null;
 
     final isNullable = null is T;
 
