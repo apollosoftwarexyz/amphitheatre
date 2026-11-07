@@ -117,22 +117,69 @@ class AmphitheatreController with ChangeNotifier {
   /// Returns the aspect ratio of the video.
   double get aspectRatio => controller.value.aspectRatio;
 
-  var _initialized = false;
+  /// Whether the video cannot be played: the underlying [controller] reports
+  /// an error, or its initialization threw.
+  ///
+  /// The latter is tracked here because the video player throws from
+  /// `setMixWithOthers` and `createWithOptions` before it has registered the
+  /// error handler that feeds `value.hasError`, so those failures never reach
+  /// the value.
+  bool get hasError =>
+      controller.value.hasError || _initializationError != null;
+
+  /// The initialization started by [initialize], or null when it was never
+  /// called on this controller.
+  Completer<void>? _initialization;
+
+  /// The error with which the initialization failed, if it did.
+  Object? _initializationError;
+
+  var _disposed = false;
+
+  /// Completes once [initialize] has finished (successfully or not) and any
+  /// autoplay has been issued to the [controller]. Commands sent to the
+  /// [controller] after this future completes are therefore ordered after
+  /// the autoplay (see [AmphitheatreEditorOptions.canAutoAccept]); the play
+  /// itself is not awaited. Already complete when [initialize] was never
+  /// called on this controller (the underlying [controller] was initialized
+  /// directly).
+  Future<void> get whenInitialized =>
+      _initialization?.future ?? Future<void>.value();
 
   /// Initialize the underlying [controller].
+  ///
+  /// A failure is reported through [hasError] (and to listeners), and is also
+  /// forwarded to [FlutterError.reportError] so that it remains visible in
+  /// logs and crash reporting.
   void initialize({bool autoPlay = true, bool looping = false}) {
     // Ensure the controller is not re-initialized when it is already
     // initialized.
-    if (_initialized) return;
-    _initialized = true;
+    if (_initialization != null) return;
+    final initialization = Completer<void>();
+    _initialization = initialization;
 
     controller.addListener(_onControllerUpdate);
     unawaited(controller.setLooping(looping));
 
     unawaited(
       controller.initialize().then((_) {
+        // The controller may have been disposed during the initialization.
+        if (_disposed) return;
         if (autoPlay) play();
-      }),
+      }).catchError((Object error, StackTrace stackTrace) {
+        FlutterError.reportError(
+          FlutterErrorDetails(
+            exception: error,
+            stack: stackTrace,
+            library: 'amphitheatre',
+            context: ErrorDescription('while initializing a video'),
+          ),
+        );
+
+        if (_disposed) return;
+        _initializationError = error;
+        notifyListeners();
+      }).whenComplete(initialization.complete),
     );
   }
 
@@ -164,14 +211,16 @@ class AmphitheatreController with ChangeNotifier {
   void _onControllerUpdate() => notifyListeners();
 
   /// Dispose the underlying [controller], then the [AmphitheatreController].
+  ///
+  /// The controller cannot be used (or initialized) again afterwards: the
+  /// underlying [VideoPlayerController] is disposed with it.
   @override
   Future<void> dispose() async {
+    // Set before the await: a continuation of initialize() that lands while
+    // the underlying controller is being disposed must not play or notify.
+    _disposed = true;
     await controller.dispose();
     super.dispose();
-
-    // As everything is now disposed, mark that the controller can be
-    // re-initialized if desired.
-    _initialized = false;
   }
 
   /// Fetch the path for the video from the underlying controller (e.g., so it

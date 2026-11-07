@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:amphitheatre/src/amphitheatre_components.dart';
 import 'package:amphitheatre/src/amphitheatre_controller.dart';
+import 'package:amphitheatre/src/utils.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
@@ -295,13 +296,19 @@ class _AmphitheatreState extends State<Amphitheatre> {
   }
   void _toggleControls() {
     if ((widget.enableReplayButton && !widget.controller.isCompleted) &&
-        widget.enableToggleControls) {
+        widget.enableToggleControls &&
+        !widget.controller.hasError) {
       setState(() => _showControls = !_showControls);
     }
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
+  Widget build(BuildContext context) {
+    // A video that cannot be played shows why, in place of the black frame,
+    // with only the close button to act on.
+    final bool hasError = widget.controller.hasError;
+
+    return Scaffold(
         backgroundColor: Colors.black,
         body: Stack(
           fit: StackFit.expand,
@@ -311,20 +318,29 @@ class _AmphitheatreState extends State<Amphitheatre> {
               child: Container(
                 color: Colors.transparent,
                 child: Center(
-                  child: AspectRatio(
-                    aspectRatio: widget.controller.aspectRatio,
-                    child: AnimatedOpacity(
-                      opacity: widget.enableReplayButton &&
-                              widget.controller.isCompleted
-                          ? 0
-                          : 1,
-                      duration: widget.controller.animationDuration,
-                      curve: widget.controller.animationCurve,
-                      child: VideoPlayer(
-                        widget.controller.controller,
-                      ),
-                    ),
-                  ),
+                  child: hasError
+                      ? Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Text(
+                            getLocalizationDelegate(context).videoLoadFailed,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                        )
+                      : AspectRatio(
+                          aspectRatio: widget.controller.aspectRatio,
+                          child: AnimatedOpacity(
+                            opacity: widget.enableReplayButton &&
+                                    widget.controller.isCompleted
+                                ? 0
+                                : 1,
+                            duration: widget.controller.animationDuration,
+                            curve: widget.controller.animationCurve,
+                            child: VideoPlayer(
+                              widget.controller.controller,
+                            ),
+                          ),
+                        ),
                 ),
               ),
             ),
@@ -332,13 +348,14 @@ class _AmphitheatreState extends State<Amphitheatre> {
               top: 20,
               left: 20,
               child: SafeArea(
+                // The one way out of an unplayable video is always shown.
                 child: widget.buildCloseButton(
                   widget.controller,
-                  _showControls,
+                  _showControls || hasError,
                 ),
               ),
             ),
-            if (widget.buildDoneButton != null)
+            if (widget.buildDoneButton != null && !hasError)
               Positioned(
                 top: 20,
                 right: 20,
@@ -349,38 +366,40 @@ class _AmphitheatreState extends State<Amphitheatre> {
                   ),
                 ),
               ),
-            if (widget.enableReplayButton)
+            if (widget.enableReplayButton && !hasError)
               Center(
                 child: widget.buildReplayButton(
                   widget.controller,
                   _showControls,
                 ),
               ),
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: _controlsWrapper([
-                widget.buildProgressSlider(
-                  widget.controller,
-                  _showControls,
-                ),
-                widget.buildVideoControls(
-                  widget.controller,
-                  _showControls,
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(top: 20),
-                  child: widget.buildVideoInfo(
+            if (!hasError)
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: _controlsWrapper([
+                  widget.buildProgressSlider(
                     widget.controller,
                     _showControls,
                   ),
-                ),
-              ]),
-            ),
+                  widget.buildVideoControls(
+                    widget.controller,
+                    _showControls,
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 20),
+                    child: widget.buildVideoInfo(
+                      widget.controller,
+                      _showControls,
+                    ),
+                  ),
+                ]),
+              ),
           ],
         ),
       );
+  }
 
   Widget _controlsWrapper(List<Widget> controls) {
     final bool showControls = _showControls &&

@@ -50,8 +50,7 @@ final class AmphitheatreEditorActionCrop extends AmphitheatreEditorAction {
 /// [AmphitheatreController] (which is for the video) to control the edit
 /// actions that should be applied to the video.
 final class AmphitheatreEditorController with ChangeNotifier {
-  AmphitheatreEditorModifications _value =
-      const AmphitheatreEditorModifications.empty();
+  var _value = const AmphitheatreEditorModifications.empty();
   
   /// The maximum number of history items to retain.
   static const kMaxHistoryLength = 32;
@@ -65,8 +64,15 @@ final class AmphitheatreEditorController with ChangeNotifier {
   /// written here.
   final MaxSizeStack<AmphitheatreEditorModifications> _future = MaxSizeStack(kMaxHistoryLength);
 
+  /// The modifications captured when the current crop gesture began (see
+  /// [beginCropGesture]), or null outside a gesture.
+  AmphitheatreEditorModifications? _gestureOrigin;
+
   /// The current set of editor modifications.
   AmphitheatreEditorModifications get value => _value;
+
+  /// Whether a crop gesture is in progress (see [beginCropGesture]).
+  bool get isInCropGesture => _gestureOrigin != null;
 
   /// Whether a modification has been applied to the video.
   bool get hasModification => value.isNotEmpty;
@@ -104,21 +110,91 @@ final class AmphitheatreEditorController with ChangeNotifier {
 
   /// Crop the video length to only retain the part between [start] and [end].
   ///
+  /// A crop gesture in progress is ended first (see [endCropGesture]).
+  ///
   /// See [AmphitheatreEditorActionCrop].
   void crop({
     required Duration start,
     required Duration end,
     bool writeHistory = true,
-  }) =>
-      _applyNewValue(
-        value.copyWith(
-          crop: AmphitheatreEditorActionCrop(start: start, end: end),
-        ),
-        writeHistory: writeHistory,
-      );
+  }) {
+    endCropGesture();
+    _applyNewValue(
+      value.copyWith(
+        crop: AmphitheatreEditorActionCrop(start: start, end: end),
+      ),
+      writeHistory: writeHistory,
+    );
+  }
   
+  /// Begin a crop gesture.
+  ///
+  /// The current [value] is captured. Until [endCropGesture] or
+  /// [cancelCropGesture], [previewCrop] replaces the value without touching
+  /// the undo or redo stacks, so a drag of many updates is at most one history
+  /// entry. Calling this during a gesture does nothing. Every other operation
+  /// on the history ([crop], [undo], [redo], [clearHistory], [reset]) ends a
+  /// gesture in progress before it acts, so the stacks are never edited
+  /// underneath one.
+  void beginCropGesture() {
+    _gestureOrigin ??= _value;
+  }
+
+  /// Preview a crop during a gesture: the value changes and listeners are
+  /// notified, but no history is written and the redo stack is kept.
+  ///
+  /// Outside a gesture this is [crop] with `writeHistory: false`.
+  void previewCrop({required Duration start, required Duration end}) {
+    if (_gestureOrigin == null) {
+      crop(start: start, end: end, writeHistory: false);
+      return;
+    }
+
+    final AmphitheatreEditorModifications next = value.copyWith(
+      crop: AmphitheatreEditorActionCrop(start: start, end: end),
+    );
+    if (_value == next) return;
+
+    _value = next;
+    notifyListeners();
+  }
+
+  /// End the crop gesture.
+  ///
+  /// If the value differs from the one captured by [beginCropGesture], that
+  /// value is pushed onto the history once and the redo stack is cleared.
+  /// Does nothing outside a gesture.
+  void endCropGesture() {
+    final AmphitheatreEditorModifications? origin = _gestureOrigin;
+    if (origin == null) return;
+    _gestureOrigin = null;
+
+    if (_value == origin) return;
+
+    _future.clear();
+    _history.push(origin);
+    notifyListeners();
+  }
+
+  /// Cancel the crop gesture: the value captured by [beginCropGesture] is
+  /// restored and both stacks are left as they were. Does nothing outside a
+  /// gesture.
+  void cancelCropGesture() {
+    final AmphitheatreEditorModifications? origin = _gestureOrigin;
+    if (origin == null) return;
+    _gestureOrigin = null;
+
+    if (_value == origin) return;
+
+    _value = origin;
+    notifyListeners();
+  }
+
   /// Undo the last edit.
+  ///
+  /// A crop gesture in progress is ended first (see [endCropGesture]).
   void undo() {
+    endCropGesture();
     if (_history.isNotEmpty) {
       _future.push(_value);
       _value = _history.pop();
@@ -127,7 +203,10 @@ final class AmphitheatreEditorController with ChangeNotifier {
   }
 
   /// Redo the last edit.
+  ///
+  /// A crop gesture in progress is ended first (see [endCropGesture]).
   void redo() {
+    endCropGesture();
     if (_future.isNotEmpty) {
       _history.push(_value);
       _value = _future.pop();
@@ -142,7 +221,10 @@ final class AmphitheatreEditorController with ChangeNotifier {
   /// the changes themselves.
   /// 
   /// To clear the modifications too, use [reset] instead.
+  ///
+  /// A crop gesture in progress is ended first (see [endCropGesture]).
   void clearHistory() {
+    endCropGesture();
     _history.clear();
     _future.clear();
     notifyListeners();
@@ -152,7 +234,10 @@ final class AmphitheatreEditorController with ChangeNotifier {
   /// 
   /// Unlike [clearHistory], this clears the history and all modifications to
   /// the video.
+  ///
+  /// A crop gesture in progress is ended first (see [endCropGesture]).
   void reset() {
+    endCropGesture();
     _value = const AmphitheatreEditorModifications.empty();
     clearHistory();
   }

@@ -133,7 +133,10 @@ public class AmphitheatrePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
 
                 switch sessions[args.sessionId] {
                     case .some(let session): try session.bind(sink: events)
-                    case .none: return FlutterError(code: "UNKNOWN_SESSION", message: "invalid session ID", details: args.sessionId)
+                    // The session is discarded once awaited, so a subscription
+                    // that arrives after a fast export concluded has nothing
+                    // left to report: the stream simply ends.
+                    case .none: events(FlutterEndOfEventStream)
                 }
 
                 return nil
@@ -190,10 +193,15 @@ public class AmphitheatrePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
                     case "checkCropVideoDiskSpace": result(try await checkCropVideoDiskSpace(args: try CropVideoArgs.parse(arguments: call.arguments)))
                     case "startCropVideo": result(try await startCropVideo(args: try CropVideoArgs.parse(arguments: call.arguments)))
                     case "awaitCropVideo": result(try await awaitCropVideo(args: try SessionArgs.parse(arguments: call.arguments)))
+                    case "cancelCropVideo":
+                        // Cancelling an unknown or already settled session is a no-op.
+                        cancelCropVideo(sessionId: try SessionArgs.parse(arguments: call.arguments).sessionId)
+                        result(nil)
+                    case "getThumbnails": result(try await getThumbnails(args: try GetThumbnailsArgs.parse(arguments: call.arguments)))
                     default: result(FlutterMethodNotImplemented)
                 }
-            } catch let error as CancellationError {
-                result(FlutterError(code: "CANCELLED", message: "cancelled", details: nil))
+            } catch is CancellationError {
+                result(FlutterError(code: "EXPORT_CANCELLED", message: "the export session was cancelled", details: nil))
             } catch let error as FlutterError {
                 result(error)
             } catch {
@@ -374,13 +382,7 @@ public class AmphitheatrePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             // the proportion of the video that the crop keeps. The crop
             // range is clamped to the video's duration.
             let cropMs = min(args.end - args.start, durationMs)
-            let (requiredBytes, overflow) = fileSize.multipliedReportingOverflow(by: cropMs / durationMs)
-            if overflow {
-                throw FlutterError(code: "PRECONDITION_FAIL", message: "the video is too large to process", details: [
-                    "fileSize": Int64(clamping: fileSize),
-                    "cropMs": Int64(clamping: cropMs),
-                ])
-            }
+            let requiredBytes = UInt64((Double(fileSize) * (Double(cropMs) / Double(durationMs))).rounded(.up))
 
             // Measure the free space available on the volume that will hold
             // the output (the plugin's temporary directory).
@@ -485,28 +487,37 @@ public class AmphitheatrePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
                 exportSession.outputURL = outUrl
                 exportSession.outputFileType = AVFileType.mp4
 
-                Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { timer in
+                // The legacy export() exposes no progress stream, so it is
+                // polled. The timer retains the session and self, so it is
+                // stopped on every exit from this block (completion, failure,
+                // or a cancellation that prevents the export from starting);
+                // the timer never invalidates itself.
+                let progressTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
                     // The timer fires on the main run loop.
                     MainActor.assumeIsolated {
-                        let progress = exportSession.progress
-                        if (progress >= 1.0 || ![.unknown, .waiting, .exporting].contains(exportSession.status)) {
-                            timer.invalidate()
-                        }
-
                         if let session = self.sessions[sessionId] {
-                            self.handleCropVideoProgress(session: session, progress: Double(progress))
+                            self.handleCropVideoProgress(session: session, progress: Double(exportSession.progress))
                         }
                     }
                 }
+                defer { progressTimer.invalidate() }
 
-                await exportSession.export()
+                // Swift cancellation is cooperative and the legacy export()
+                // does not observe it, so the handler stops the session. A task
+                // cancelled before this point never starts the export.
+                try Task.checkCancellation()
+                await withTaskCancellationHandler {
+                    await exportSession.export()
+                } onCancel: {
+                    exportSession.cancelExport()
+                }
 
                 switch exportSession.status {
                 case .completed:
                     break
                 case .failed:
                     _ = try? FileManager.default.removeItem(at: outUrl)
-                    throw FlutterError(code: "EXPORT_FAILED", message: "the export session failed", details: nil)
+                    throw FlutterError(code: "EXPORT_FAILED", message: "an error occurred during the export session", details: exportSession.error?.localizedDescription)
                 case .cancelled:
                     _ = try? FileManager.default.removeItem(at: outUrl)
                     throw FlutterError(code: "EXPORT_CANCELLED", message: "the export session was cancelled", details: nil)
@@ -549,9 +560,150 @@ public class AmphitheatrePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             return path
         } catch let error as FlutterError {
             throw error
+        } catch is CancellationError {
+            throw FlutterError(code: "EXPORT_CANCELLED", message: "the export session was cancelled", details: nil)
         } catch {
             throw FlutterError(code: "UNEXPECTED_ERROR", message: "an unknown error has occurred", details: nil)
         }
+    }
+
+    public struct GetThumbnailsArgs {
+        /// No more than this many frames are extracted, however many are asked for.
+        static let maxCount = 50
+
+        /// Frames are never taller than this, however tall a frame is asked for.
+        static let maxHeightLimit = 1080
+
+        let path: String
+        let count: Int
+        let maxHeight: Int
+
+        public static func parse(arguments: Any?) throws(FlutterError) -> GetThumbnailsArgs {
+            guard let rawArgs = arguments as? NSDictionary,
+                  let path = rawArgs["path"] as? NSString as? String,
+                  let count = (rawArgs["count"] as? NSNumber)?.intValue,
+                  let maxHeight = (rawArgs["maxHeight"] as? NSNumber)?.intValue
+            else {
+                throw FlutterError(code: "INVALID_ARGS", message: "invalid arguments for getThumbnails", details: nil)
+            }
+
+            guard count >= 1, maxHeight >= 1 else {
+                throw FlutterError(code: "INVALID_ARGS", message: "invalid arguments for getThumbnails: 'count' and 'maxHeight' must be positive", details: nil)
+            }
+
+            return GetThumbnailsArgs(path: path, count: min(count, maxCount), maxHeight: min(maxHeight, maxHeightLimit))
+        }
+    }
+
+    /// Extract evenly spaced JPEG thumbnails of the video for the editor's
+    /// filmstrip (sampled at the midpoint of each cell, so the first and last
+    /// frames are representative), each at most `maxHeight` pixels tall.
+    ///
+    /// Frames that fail to decode are skipped and an unreadable video yields
+    /// an empty list: the filmstrip is an enhancement, never an error.
+    @MainActor
+    private func getThumbnails(args: GetThumbnailsArgs) async throws(FlutterError) -> [FlutterStandardTypedData] {
+        var isDirectory: ObjCBool = false
+        if !FileManager.default.fileExists(atPath: args.path, isDirectory: &isDirectory) {
+            throw FlutterError(code: "SEARCH_FAIL", message: "failed to locate the provided file path", details: nil)
+        }
+
+        if isDirectory.boolValue {
+            throw FlutterError(code: "INVALID_FILE_PATH", message: "the provided file path is a directory", details: args.path)
+        }
+
+        let url: URL
+        if #available(iOS 16.0, *) {
+            url = URL.init(filePath: args.path, directoryHint: URL.DirectoryHint.notDirectory)
+        } else {
+            url = URL(fileURLWithPath: args.path, isDirectory: false)
+        }
+
+        let count = args.count
+        let maxHeight = args.maxHeight
+
+        // Decoding runs off the main actor; only the encoded bytes come back.
+        let encoded: [Data] = await Task.detached(priority: .utility) {
+            let asset = AVURLAsset(url: url)
+            let generator = AVAssetImageGenerator(asset: asset)
+            generator.appliesPreferredTrackTransform = true
+
+            let duration: CMTime
+            if #available(iOS 15, *) {
+                duration = (try? await asset.load(.duration)) ?? .zero
+            } else {
+                duration = asset.duration
+            }
+
+            // An unreadable or indefinite duration would produce invalid
+            // times; there are no thumbnails to extract.
+            let seconds = CMTimeGetSeconds(duration)
+            guard seconds.isFinite, seconds > 0 else {
+                return []
+            }
+
+            // AVFoundation only documents CGSizeZero as "unscaled", not a
+            // single zero component, so both components of maximumSize are
+            // given explicitly. The width is derived from the aspect ratio
+            // of the track as displayed (naturalSize after the preferred
+            // transform, which the generator also applies). Without a video
+            // track there are no frames to extract.
+            let naturalSize: CGSize
+            let preferredTransform: CGAffineTransform
+            if #available(iOS 15, *) {
+                guard let track = try? await asset.loadTracks(withMediaType: .video).first,
+                      let properties = try? await track.load(.naturalSize, .preferredTransform)
+                else {
+                    return []
+                }
+                naturalSize = properties.0
+                preferredTransform = properties.1
+            } else {
+                guard let track = asset.tracks(withMediaType: .video).first else {
+                    return []
+                }
+                naturalSize = track.naturalSize
+                preferredTransform = track.preferredTransform
+            }
+
+            let displaySize = naturalSize.applying(preferredTransform)
+            let displayWidth = abs(displaySize.width)
+            let displayHeight = abs(displaySize.height)
+            guard displayWidth > 0, displayHeight > 0 else {
+                return []
+            }
+
+            let maxWidth = max(1, ceil(CGFloat(maxHeight) * displayWidth / displayHeight))
+            generator.maximumSize = CGSize(width: maxWidth, height: CGFloat(maxHeight))
+
+            let times: [CMTime] = (0..<count).map { index in
+                CMTime(
+                    seconds: seconds * (2.0 * Double(index) + 1.0) / (2.0 * Double(count)),
+                    preferredTimescale: 600)
+            }
+
+            var thumbnails: [Data] = []
+
+            if #available(iOS 16, *) {
+                for await imageResult in generator.images(for: times) {
+                    if let cgImage = try? imageResult.image,
+                       let jpeg = UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.7) {
+                        thumbnails.append(jpeg)
+                    }
+                }
+            } else {
+                for time in times {
+                    if let cgImage = try? generator.copyCGImage(at: time, actualTime: nil),
+                       let jpeg = UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.7) {
+                        thumbnails.append(jpeg)
+                    }
+                }
+            }
+
+            return thumbnails
+        }.value
+
+        return encoded.map { FlutterStandardTypedData(bytes: $0) }
     }
 
     /// Deliver a progress update for the given session to Flutter.

@@ -52,5 +52,22 @@
     "unknownError": "An unknown error occurred.",
     "@unknownError": {
         "description": "An unknown error occurred."
+    },
+    "retry": "Try again",
+    "@retry": {
+        "description": "Label for the action, offered with an export failure message, that starts the export again."
+    },
+    "videoLoadFailed": "This video can't be played.",
+    "@videoLoadFailed": {
+        "description": "Shown in the player in place of the video when it failed to load."
+    },
+    "selectedDuration": "{time} selected",
+    "@selectedDuration": {
+        "description": "Shown under the editor's timeline, indicating the length of the current selection (e.g., '00:42 selected').",
+        "placeholders": {
+            "time": {
+                "type": "String"
+            }
+        }
     }
 }

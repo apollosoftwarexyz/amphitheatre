@@ -2,6 +2,7 @@
 
 // ignore: unused_import
 import 'package:intl/intl.dart' as intl;
+
 import 'amphitheatre_localizations.dart';
 
 // ignore_for_file: type=lint
@@ -41,7 +42,9 @@ class AmphitheatreLocalizationsEs extends AmphitheatreLocalizations {
   String exportingVideo(double progress) {
     final intl.NumberFormat progressNumberFormat =
         intl.NumberFormat.decimalPercentPattern(
-            locale: localeName, decimalDigits: 1);
+          locale: localeName,
+          decimalDigits: 1,
+        );
     final String progressString = progressNumberFormat.format(progress);
 
     return 'Exportando el video ($progressString)...';
@@ -49,6 +52,17 @@ class AmphitheatreLocalizationsEs extends AmphitheatreLocalizations {
 
   @override
   String get unknownError => 'Se ha producido un error desconocido.';
+
+  @override
+  String get retry => 'Reintentar';
+
+  @override
+  String get videoLoadFailed => 'Este video no se puede reproducir.';
+
+  @override
+  String selectedDuration(String time) {
+    return '$time seleccionados';
+  }
 }
 
 /// The translations for Spanish Castilian, as used in Latin America and the Caribbean (`es_419`).
@@ -86,7 +100,9 @@ class AmphitheatreLocalizationsEs419 extends AmphitheatreLocalizationsEs {
   String exportingVideo(double progress) {
     final intl.NumberFormat progressNumberFormat =
         intl.NumberFormat.decimalPercentPattern(
-            locale: localeName, decimalDigits: 1);
+          locale: localeName,
+          decimalDigits: 1,
+        );
     final String progressString = progressNumberFormat.format(progress);
 
     return 'Exportando el video ($progressString)...';
@@ -94,4 +110,15 @@ class AmphitheatreLocalizationsEs419 extends AmphitheatreLocalizationsEs {
 
   @override
   String get unknownError => 'Ocurrió un error desconocido.';
+
+  @override
+  String get retry => 'Reintentar';
+
+  @override
+  String get videoLoadFailed => 'Este video no se puede reproducir.';
+
+  @override
+  String selectedDuration(String time) {
+    return '$time seleccionados';
+  }
 }

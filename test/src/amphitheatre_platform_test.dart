@@ -56,6 +56,90 @@ void main() {
       expect(host.deletedFiles, isEmpty);
     });
 
+    test('getThumbnails passes its arguments to the host', () async {
+      host.thumbnails = [Uint8List.fromList([1, 2, 3])];
+
+      final List<Uint8List> thumbnails = await platform.getThumbnails(
+        path: '/videos/example.mp4',
+        count: 12,
+        maxHeight: 144,
+      );
+
+      final MethodCall call =
+          host.log.singleWhere((call) => call.method == 'getThumbnails');
+      expect(
+        call.arguments,
+        equals({
+          'path': '/videos/example.mp4',
+          'count': 12,
+          'maxHeight': 144,
+        }),
+      );
+      expect(thumbnails, equals([Uint8List.fromList([1, 2, 3])]));
+    });
+
+    test('getThumbnails keeps only the byte lists the host answers', () async {
+      host.thumbnails = [
+        Uint8List.fromList([1]),
+        'not bytes',
+        null,
+        Uint8List.fromList([2]),
+      ];
+
+      final List<Uint8List> thumbnails = await platform.getThumbnails(
+        path: '/videos/example.mp4',
+        count: 2,
+        maxHeight: 64,
+      );
+
+      expect(
+        thumbnails,
+        equals([Uint8List.fromList([1]), Uint8List.fromList([2])]),
+      );
+    });
+
+    test('getThumbnails answers an empty list for a null answer', () async {
+      host.thumbnails = null;
+
+      expect(
+        await platform.getThumbnails(
+          path: '/videos/example.mp4',
+          count: 2,
+          maxHeight: 64,
+        ),
+        isEmpty,
+      );
+    });
+
+    test('getThumbnails propagates a failure from the host', () async {
+      host.thumbnailsError = PlatformException(
+        code: 'SEARCH_FAIL',
+        message: 'Failed to locate the provided file.',
+      );
+
+      await expectLater(
+        platform.getThumbnails(
+          path: '/videos/missing.mp4',
+          count: 2,
+          maxHeight: 64,
+        ),
+        throwsA(
+          isA<PlatformException>().having((e) => e.code, 'code', 'SEARCH_FAIL'),
+        ),
+      );
+    });
+
+    test('the base platform does not implement getThumbnails', () {
+      expect(
+        () => _MinimalPlatform().getThumbnails(
+          path: '/videos/example.mp4',
+          count: 2,
+          maxHeight: 64,
+        ),
+        throwsA(isA<UnimplementedError>()),
+      );
+    });
+
     test('cropVideo starts a session with the correct arguments', () async {
       final AmphitheatreCropVideoSession session = await platform.cropVideo(
         path: '/videos/example.mp4',
@@ -170,7 +254,7 @@ void main() {
             isA<AmphitheatreCropVideoStatus>().having(
               (s) => s.quality,
               'quality',
-              AmphitheatreCropVideoQuality.presetFullHD,
+              AmphitheatreCropVideoQuality.passthrough,
             ),
           ),
         );
@@ -260,7 +344,7 @@ void main() {
         await expectation;
       });
 
-      test('subscribing after completion reports an unknown session', () async {
+      test('subscribing after completion ends the stream', () async {
         final AmphitheatreCropVideoSession session = await startSession();
         await host.completeCropVideo(session.id);
         expect(
@@ -271,13 +355,7 @@ void main() {
           ),
         );
 
-        await expectLater(
-          session.status,
-          emitsError(
-            isA<PlatformException>()
-                .having((e) => e.code, 'code', 'UNKNOWN_SESSION'),
-          ),
-        );
+        await expectLater(session.status, emitsDone);
       });
 
       test('cancelling the subscription cancels the crop session', () async {
@@ -299,12 +377,57 @@ void main() {
           ),
         );
       });
+
+      test('cancel asks the host to cancel the session', () async {
+        final AmphitheatreCropVideoSession session = await platform.cropVideo(
+          path: '/videos/example.mp4',
+          start: 1000,
+          end: 5000,
+          diskSpacePolicy: AmphitheatreDiskSpacePolicy.ignore,
+        );
+
+        await session.cancel();
+
+        final MethodCall call =
+            host.log.singleWhere((call) => call.method == 'cancelCropVideo');
+        expect(call.arguments, equals({'sessionId': session.id}));
+        expect(host.cropSessions, isEmpty);
+        await expectLater(
+          session.future,
+          throwsA(
+            isA<PlatformException>()
+                .having((e) => e.code, 'code', kExportCancelledErrorCode),
+          ),
+        );
+      });
+
+      test('cancel after the session concluded is a no-op', () async {
+        final AmphitheatreCropVideoSession session = await platform.cropVideo(
+          path: '/videos/example.mp4',
+          start: 1000,
+          end: 5000,
+          diskSpacePolicy: AmphitheatreDiskSpacePolicy.ignore,
+        );
+        await host.completeCropVideo(session.id);
+
+        await expectLater(session.cancel(), completes);
+        expect(host.cancelRequests, equals([session.id]));
+        expect(await session.future, isNotEmpty);
+      });
+
+      test('the base session does not implement cancel', () {
+        expect(
+          () => _MinimalSession().cancel(),
+          throwsA(isA<UnimplementedError>()),
+        );
+      });
     });
 
     group('disk space policy', () {
       Future<AmphitheatreCropVideoSession> startSession(
         AmphitheatreDiskSpacePolicy diskSpacePolicy, {
         OnExceedsDiskSpace? onExceedsDiskSpace,
+        AmphitheatreCropVideoQuality? quality,
       }) =>
           platform.cropVideo(
             path: '/videos/example.mp4',
@@ -312,6 +435,7 @@ void main() {
             end: 5000,
             diskSpacePolicy: diskSpacePolicy,
             onExceedsDiskSpace: onExceedsDiskSpace,
+            quality: quality,
           );
 
       test('ignore skips the disk space check', () async {
@@ -334,11 +458,24 @@ void main() {
         expect(
           call.arguments,
           equals({
+            'quality': null,
             'path': '/videos/example.mp4',
             'start': 1000,
             'end': 5000,
           }),
         );
+      });
+
+      test('the check passes the quality to the host', () async {
+        await startSession(
+          AmphitheatreDiskSpacePolicy.warnIfExceeds,
+          quality: AmphitheatreCropVideoQuality.presetHD,
+        );
+
+        final MethodCall call = host.log.singleWhere(
+          (call) => call.method == 'checkCropVideoDiskSpace',
+        );
+        expect(call.arguments, containsPair('quality', 'presetHD'));
       });
 
       test('the callback is not invoked when space is sufficient', () async {
@@ -492,4 +629,47 @@ void main() {
       });
     });
   });
+}
+
+/// An [AmphitheatrePlatform] overriding nothing beyond the abstract members:
+/// what an external implementation written before `getThumbnails` looks like.
+final class _MinimalPlatform extends AmphitheatrePlatform {
+  @override
+  String get pathSeparator => '/';
+
+  @override
+  void ensureInstanceInitialized() {}
+
+  @override
+  Future<String> getTemporaryDirectory() async => '/tmp';
+
+  @override
+  Future<int> getAvailableDiskSpace() async => 0;
+
+  @override
+  Future<void> deleteFile(String path) async {}
+
+  @override
+  Future<AmphitheatreCropVideoSession> cropVideo({
+    required String path,
+    required int start,
+    required int end,
+    required AmphitheatreDiskSpacePolicy diskSpacePolicy,
+    OnExceedsDiskSpace? onExceedsDiskSpace,
+    AmphitheatreCropVideoQuality? quality,
+  }) async =>
+      _MinimalSession();
+}
+
+/// An [AmphitheatreCropVideoSession] overriding nothing beyond the abstract
+/// members.
+final class _MinimalSession extends AmphitheatreCropVideoSession {
+  @override
+  String get id => 'minimal';
+
+  @override
+  Future<String> get future => Future.value('/tmp/minimal.mp4');
+
+  @override
+  Stream<AmphitheatreCropVideoStatus> get status => const Stream.empty();
 }

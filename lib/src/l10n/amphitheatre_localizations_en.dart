@@ -2,6 +2,7 @@
 
 // ignore: unused_import
 import 'package:intl/intl.dart' as intl;
+
 import 'amphitheatre_localizations.dart';
 
 // ignore_for_file: type=lint
@@ -41,7 +42,9 @@ class AmphitheatreLocalizationsEn extends AmphitheatreLocalizations {
   String exportingVideo(double progress) {
     final intl.NumberFormat progressNumberFormat =
         intl.NumberFormat.decimalPercentPattern(
-            locale: localeName, decimalDigits: 1);
+          locale: localeName,
+          decimalDigits: 1,
+        );
     final String progressString = progressNumberFormat.format(progress);
 
     return 'Exporting video ($progressString)...';
@@ -49,4 +52,15 @@ class AmphitheatreLocalizationsEn extends AmphitheatreLocalizations {
 
   @override
   String get unknownError => 'An unknown error occurred.';
+
+  @override
+  String get retry => 'Try again';
+
+  @override
+  String get videoLoadFailed => 'This video can\'t be played.';
+
+  @override
+  String selectedDuration(String time) {
+    return '$time selected';
+  }
 }

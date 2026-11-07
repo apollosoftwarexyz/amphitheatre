@@ -34,19 +34,22 @@ A Flutter video player and editor.
         </tr>
         <tr>
             <td><b>Supported Versions</b></td>
-            <td>SDK 21+</td>
+            <td>SDK 23+ **</td>
             <td>13.0+ *</td>
         </tr>
         <tr>
-            <td><b>Supported Devices<br/><small>(as of Jan 3, 2025)</small></b></td>
-            <td><a href="https://web.archive.org/web/20241222230146/https://apilevels.com/" target="_blank">99.7%</a></td>
-            <td><a href="https://web.archive.org/web/20250102215257/https://iosref.com/ios-usage" target="_blank">96.8%</a></td>
+            <td><b>Supported Devices<br/><small>(as of Nov 3, 2026)</small></b></td>
+            <td><a href="https://web.archive.org/web/20261107192526/https://apilevels.com/" target="_blank">99.7%</a></td>
+            <td><a href="https://web.archive.org/web/20261107192545/https://iosref.com/ios-usage" target="_blank">99.5%</a></td>
         </tr>
     </tbody>
 </table>
 
 <small>* NB: support for older versions can be implemented if needed, it has been omitted at present for simplicity of
 the platform channel implementation.</small>
+
+<small>** The Android export is built on <a href="https://developer.android.com/media/media3/transformer">Media3
+Transformer</a>, whose baseline is API 23.</small>
 
 ## Quick Start
 

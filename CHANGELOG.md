@@ -6,6 +6,14 @@
   * `clearHistory`
   * `reset`
 * Rename `AmphitheatreEditorOptions.strict` to `AmphitheatreEditorOptions.canAutoAccept`.
+* **Breaking:** Android `minSdk` is now 23.
+* **Breaking:** `AmphitheatreExporterProgressBuilder` gains an `onCancel` parameter.
+* Passthrough trims copy the streams from the nearest preceding key frame instead of re-encoding.
+* Show a filmstrip and selection timestamps on the editor's timeline.
+* Allow cancelling an export from the progress screen, and retrying after a failure.
+* Accept short videos without showing the editor when `canAutoAccept` is set.
+* Show an error state for videos that cannot be played.
+* Add an iOS privacy manifest.
 * Bump dependencies
 
 ## 0.0.3
