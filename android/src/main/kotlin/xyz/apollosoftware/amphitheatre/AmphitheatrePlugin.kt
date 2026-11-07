@@ -648,7 +648,7 @@ class AmphitheatrePlugin: FlutterPlugin, EventChannel.StreamHandler, MethodCallH
     // Resolved before the coroutine is dispatched: see lookUpCropVideo.
     val awaitedSession: AmphitheatreExportSession? = if (call.method == "awaitCropVideo") {
       try {
-        lookUpCropVideo(SessionArgs.parse(call.arguments()!!))
+        lookUpCropVideo(SessionArgs.parse(call.arguments<Map<*, *>>()!!))
       } catch (error: FlutterError) {
         return result.error(error.code, error.message, error.details)
       } catch (error: Throwable) {
