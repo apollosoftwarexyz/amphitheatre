@@ -133,7 +133,10 @@ public class AmphitheatrePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
 
                 switch sessions[args.sessionId] {
                     case .some(let session): try session.bind(sink: events)
-                    case .none: return FlutterError(code: "UNKNOWN_SESSION", message: "invalid session ID", details: args.sessionId)
+                    // The session is discarded once awaited, so a subscription
+                    // that arrives after a fast export concluded has nothing
+                    // left to report: the stream simply ends.
+                    case .none: events(FlutterEndOfEventStream)
                 }
 
                 return nil
@@ -192,8 +195,8 @@ public class AmphitheatrePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
                     case "awaitCropVideo": result(try await awaitCropVideo(args: try SessionArgs.parse(arguments: call.arguments)))
                     default: result(FlutterMethodNotImplemented)
                 }
-            } catch let error as CancellationError {
-                result(FlutterError(code: "CANCELLED", message: "cancelled", details: nil))
+            } catch is CancellationError {
+                result(FlutterError(code: "EXPORT_CANCELLED", message: "the export session was cancelled", details: nil))
             } catch let error as FlutterError {
                 result(error)
             } catch {
@@ -374,13 +377,7 @@ public class AmphitheatrePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             // the proportion of the video that the crop keeps. The crop
             // range is clamped to the video's duration.
             let cropMs = min(args.end - args.start, durationMs)
-            let (requiredBytes, overflow) = fileSize.multipliedReportingOverflow(by: cropMs / durationMs)
-            if overflow {
-                throw FlutterError(code: "PRECONDITION_FAIL", message: "the video is too large to process", details: [
-                    "fileSize": Int64(clamping: fileSize),
-                    "cropMs": Int64(clamping: cropMs),
-                ])
-            }
+            let requiredBytes = UInt64((Double(fileSize) * (Double(cropMs) / Double(durationMs))).rounded(.up))
 
             // Measure the free space available on the volume that will hold
             // the output (the plugin's temporary directory).
@@ -499,7 +496,15 @@ public class AmphitheatrePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
                     }
                 }
 
-                await exportSession.export()
+                // Swift cancellation is cooperative and the legacy export()
+                // does not observe it, so the handler stops the session. A task
+                // cancelled before this point never starts the export.
+                try Task.checkCancellation()
+                await withTaskCancellationHandler {
+                    await exportSession.export()
+                } onCancel: {
+                    exportSession.cancelExport()
+                }
 
                 switch exportSession.status {
                 case .completed:
@@ -549,6 +554,8 @@ public class AmphitheatrePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             return path
         } catch let error as FlutterError {
             throw error
+        } catch is CancellationError {
+            throw FlutterError(code: "EXPORT_CANCELLED", message: "the export session was cancelled", details: nil)
         } catch {
             throw FlutterError(code: "UNEXPECTED_ERROR", message: "an unknown error has occurred", details: nil)
         }

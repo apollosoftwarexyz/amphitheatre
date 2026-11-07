@@ -334,6 +334,7 @@ void main() {
         expect(
           call.arguments,
           equals({
+            'quality': null,
             'path': '/videos/example.mp4',
             'start': 1000,
             'end': 5000,

@@ -326,6 +326,7 @@ final class AmphitheatrePlatformMethodChannel extends AmphitheatrePlatform {
     if (diskSpacePolicy != AmphitheatreDiskSpacePolicy.ignore) {
       try {
         await _platform.invokeMethod('checkCropVideoDiskSpace', {
+          'quality': quality?.name,
           'path': path,
           'start': start,
           'end': end,
