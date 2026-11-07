@@ -225,6 +225,20 @@ abstract class AmphitheatrePlatform extends PlatformInterface {
     OnExceedsDiskSpace? onExceedsDiskSpace,
     AmphitheatreCropVideoQuality? quality,
   });
+
+  /// Extract [count] thumbnails from the video at [path], evenly spaced across
+  /// it, each scaled (preserving the aspect ratio) to at most [maxHeight]
+  /// pixels tall and encoded as JPEG.
+  ///
+  /// Fewer than [count] images are returned when frames cannot be decoded, and
+  /// an unreadable video yields an empty list. The default implementation
+  /// throws [UnimplementedError], so external implementations keep compiling.
+  Future<List<Uint8List>> getThumbnails({
+    required String path,
+    required int count,
+    required int maxHeight,
+  }) =>
+      throw UnimplementedError('getThumbnails has not been implemented.');
 }
 
 /// Represents an in-progress crop session.
@@ -353,6 +367,22 @@ final class AmphitheatrePlatformMethodChannel extends AmphitheatrePlatform {
       channel: _platform,
       eventChannel: _platformEvents,
     );
+  }
+
+  @override
+  Future<List<Uint8List>> getThumbnails({
+    required String path,
+    required int count,
+    required int maxHeight,
+  }) async {
+    final List<Object?>? thumbnails =
+        await _platform.invokeMethod<List<Object?>>('getThumbnails', {
+      'path': path,
+      'count': count,
+      'maxHeight': maxHeight,
+    });
+
+    return (thumbnails ?? const []).whereType<Uint8List>().toList();
   }
 }
 

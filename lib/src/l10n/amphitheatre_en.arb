@@ -52,5 +52,14 @@
     "unknownError": "An unknown error occurred.",
     "@unknownError": {
         "description": "An unknown error occurred."
+    },
+    "selectedDuration": "{time} selected",
+    "@selectedDuration": {
+        "description": "Shown under the editor's timeline, indicating the length of the current selection (e.g., '00:42 selected').",
+        "placeholders": {
+            "time": {
+                "type": "String"
+            }
+        }
     }
 }

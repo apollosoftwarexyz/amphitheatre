@@ -11,6 +11,7 @@ import 'package:amphitheatre/src/max_size_stack.dart';
 import 'package:amphitheatre/src/raw_asset_image.dart';
 import 'package:amphitheatre/src/utils.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart' show DragStartBehavior;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -144,6 +145,13 @@ final class AmphitheatreEditorStyle {
   /// The color to paint the [cropEndIcon].
   final Color cropEndIconColor;
 
+  /// The color of the track behind the filmstrip: visible until the
+  /// thumbnails arrive, and wherever a frame does not cover the track.
+  final Color trackColor;
+
+  /// The color drawn over the parts of the track outside the selection.
+  final Color selectionDimColor;
+
   /// Construct an [AmphitheatreEditorStyle].
   const AmphitheatreEditorStyle({
     this.borderColor = Colors.white,
@@ -165,6 +173,8 @@ final class AmphitheatreEditorStyle {
       package: 'amphitheatre',
     ),
     this.cropEndIconColor = Colors.black,
+    this.trackColor = Colors.transparent,
+    this.selectionDimColor = Colors.black54,
   });
 
   @override
@@ -176,7 +186,9 @@ final class AmphitheatreEditorStyle {
       lineColor == other.lineColor &&
       lineThickness == other.lineThickness &&
       cropColor == other.cropColor &&
-      cropHandleSize == other.cropHandleSize;
+      cropHandleSize == other.cropHandleSize &&
+      trackColor == other.trackColor &&
+      selectionDimColor == other.selectionDimColor;
 
   @override
   int get hashCode => Object.hashAll([
@@ -187,6 +199,8 @@ final class AmphitheatreEditorStyle {
         lineThickness,
         cropColor,
         cropHandleSize,
+        trackColor,
+        selectionDimColor,
       ]);
 }
 
@@ -597,9 +611,70 @@ enum _AmphitheatreEditorSliderDragMode {
   bool get isCropEnd => this == cropEnd || this == cropIntersection;
 }
 
+/// Geometry for the editor slider: the mapping between video time
+/// (milliseconds) and x-positions on the track, shared by the painters and
+/// the gesture handling.
+///
+/// The track is the space between the two crop handle gutters; positions are
+/// in the slider's local coordinate space.
+@immutable
+final class _SliderMetrics {
+  final Size size;
+  final AmphitheatreEditorStyle style;
+  final int max;
+
+  const _SliderMetrics({
+    required this.size,
+    required this.style,
+    required this.max,
+  });
+
+  /// The width reserved on each side of the track for a crop handle.
+  double get inset => style.cropHandleSize + style.borderThickness;
+
+  double get trackLeft => inset;
+  double get trackRight => size.width - inset;
+
+  Rect get trackRect => Rect.fromLTRB(trackLeft, 0, trackRight, size.height);
+
+  RRect get trackRRect => RRect.fromRectAndCorners(
+        trackRect,
+        topLeft: style.borderRadius.topLeft,
+        topRight: style.borderRadius.topRight,
+        bottomLeft: style.borderRadius.bottomLeft,
+        bottomRight: style.borderRadius.bottomRight,
+      );
+
+  /// The x-position on the track for the time [value] (milliseconds),
+  /// accounting for the borders and the progress line. [max] must be
+  /// positive.
+  double positionFor(int value) =>
+      inset +
+      (value.floorToDouble() / max.floorToDouble()) *
+          (size.width -
+              (style.lineThickness / 2) -
+              style.borderThickness -
+              inset * 2) +
+      (style.borderThickness / 2);
+
+  /// The time (milliseconds) under the x-position [dx], for seeking the
+  /// playback head.
+  int valueFor(double dx) =>
+      (((dx - inset) / (size.width - inset * 2)) * max).floor();
+
+  /// The time delta (milliseconds) for a horizontal drag distance, for moving
+  /// a crop handle.
+  int deltaValueFor(double dxDelta) => ((dxDelta /
+              (size.width -
+                  (style.cropHandleSize * 2 + style.borderThickness * 3))) *
+          max)
+      .floor();
+}
+
 /// The [AmphitheatreEditorSlider] replaces the existing editor slider with
-/// a [CustomPainter]-based slider that includes handles for cropping the video
-/// down to size.
+/// a [CustomPainter]-based slider that paints a filmstrip of the video, the
+/// playback head and handles for cropping the video down to size, with the
+/// start, length and end of the selection underneath.
 class AmphitheatreEditorSlider extends StatefulWidget {
   /// The [controller] for the [Amphitheatre] player.
   final AmphitheatreController controller;
@@ -657,6 +732,10 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
   /// The cached end (RHS) crop icon.
   ui.Image? _cropEndIcon;
 
+  /// The filmstrip thumbnails, in timeline order.
+  List<ui.Image> _thumbnails = const [];
+  var _thumbnailsRequested = false;
+
   /// The [_AmphitheatreEditorSliderDragMode] of the current 'drag session'.
   _AmphitheatreEditorSliderDragMode? _dragMode;
 
@@ -665,6 +744,22 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
 
   Duration? _cachedCropStart;
   Duration? _cachedCropEnd;
+
+  /// Whether a horizontal drag has been accepted for the current interaction.
+  /// A drag recognizer that loses the arena to a tap also reports a cancel,
+  /// which must not touch the tap's state.
+  var _dragStarted = false;
+
+  /// Whether the system cancelled the pointer of the current interaction. The
+  /// recognizer reports that as a drag end, which must roll back rather than
+  /// commit.
+  var _pointerCancelled = false;
+
+  /// When the slider last seeked the player on its own (to keep the playback
+  /// head within the selection, or to preview a dragged handle). Those seeks
+  /// are throttled so that position updates and handle drags do not flood the
+  /// player.
+  var _lastAutoSeek = DateTime.fromMillisecondsSinceEpoch(0);
 
   @override
   void initState() {
@@ -677,13 +772,20 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
 
   @override
   void dispose() {
+    // A gesture interrupted by the slider going away is abandoned; the
+    // slider's own listener is gone first, so the restore does not rebuild it.
     widget.editorController.removeListener(_didEditVideo);
+    _cancelInteraction();
     widget.controller.removeListener(_didControllerUpdate);
     widget.controller.removeListener(_didVideoLoad);
     _cropStartIcon?.dispose();
     _cropEndIcon?.dispose();
     _cropStartIcon = null;
     _cropEndIcon = null;
+    for (final ui.Image thumbnail in _thumbnails) {
+      thumbnail.dispose();
+    }
+    _thumbnails = const [];
     super.dispose();
   }
 
@@ -698,7 +800,7 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
           .crop(start: initialStart, end: initialEnd, writeHistory: false);
       widget.editorController.clearHistory();
 
-      _ensurePlaybackWithinCropRegion();
+      _ensurePlaybackWithinCropRegion(force: true);
       widget.controller.play();
       widget.controller.removeListener(_didVideoLoad);
       widget.controller.addListener(_didControllerUpdate);
@@ -717,22 +819,38 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
   }
 
   /// Ensures that the playback head always resides within the crop region.
-  void _ensurePlaybackWithinCropRegion() {
+  void _ensurePlaybackWithinCropRegion({bool force = false}) {
     final AmphitheatreEditorActionCrop? crop =
         widget.editorController.value.crop;
     if (crop == null) return;
 
+    final Duration position = widget.controller.position;
     final bool isPlaying = widget.controller.isPlaying;
 
-    if (widget.controller.position < crop.start) {
-      widget.controller.seekTo(crop.start);
-    } else if (widget.controller.position > crop.end) {
-      if (isPlaying) {
-        widget.controller.seekTo(crop.start);
-      } else {
-        widget.controller.seekTo(crop.end);
-      }
+    Duration? target;
+    if (position < crop.start) {
+      target = crop.start;
+    } else if (position > crop.end) {
+      // Loop back to the start of the selection during playback; hold at the
+      // end of the selection while paused.
+      target = isPlaying ? crop.start : crop.end;
     }
+
+    if (target != null) _autoSeek(target, force: force);
+  }
+
+  /// Seek the player to [target] unless another automatic seek happened in
+  /// the last 200 ms; [force] bypasses the throttle so that the final seek of
+  /// a gesture is never dropped.
+  void _autoSeek(Duration target, {bool force = false}) {
+    final now = DateTime.now();
+    if (!force &&
+        now.difference(_lastAutoSeek) < const Duration(milliseconds: 200)) {
+      return;
+    }
+
+    _lastAutoSeek = now;
+    widget.controller.seekTo(target);
   }
 
   @override
@@ -803,6 +921,81 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
     if (mounted) setState(() {});
   }
 
+  /// Requests the filmstrip thumbnails from the platform, once, sized for the
+  /// first finite, non-empty track [size] laid out after the video
+  /// initialised. A later change of size does not request them again.
+  ///
+  /// The filmstrip is an enhancement: a video without a file path (see
+  /// [AmphitheatreController.getVideoPath]) or any platform failure simply
+  /// leaves the plain track visible.
+  Future<void> _maybeLoadThumbnails(Size size) async {
+    if (_thumbnailsRequested ||
+        !widget.controller.isInitialized ||
+        widget.controller.duration <= Duration.zero ||
+        !size.isFinite ||
+        size.isEmpty) {
+      return;
+    }
+    _thumbnailsRequested = true;
+
+    try {
+      final double aspectRatio = widget.controller.aspectRatio.isFinite &&
+              widget.controller.aspectRatio > 0
+          ? widget.controller.aspectRatio.clamp(0.4, 2.4)
+          : 1.0;
+
+      final int count =
+          (size.width / (size.height * aspectRatio)).ceil().clamp(3, 24);
+      final double devicePixelRatio =
+          mounted ? MediaQuery.devicePixelRatioOf(context) : 1.0;
+      final int maxHeight =
+          (size.height * devicePixelRatio).round().clamp(32, 320);
+
+      final AmphitheatreVideoPath videoPath = await widget.controller
+          .getVideoPath(temporaryFileFallback: false);
+      final List<Uint8List> encoded =
+          await getAmphitheatrePlatform().getThumbnails(
+        path: videoPath.path,
+        count: count,
+        maxHeight: maxHeight,
+      );
+
+      final List<ui.Image> thumbnails = await _decodeThumbnails(encoded);
+
+      if (mounted) {
+        setState(() => _thumbnails = thumbnails);
+      } else {
+        for (final thumbnail in thumbnails) {
+          thumbnail.dispose();
+        }
+      }
+    } catch (_) {/* ignored: the filmstrip is optional */}
+  }
+
+  /// Decodes every image in [encoded]. The images decoded so far are disposed
+  /// if a later one fails, so a failure leaks nothing.
+  static Future<List<ui.Image>> _decodeThumbnails(
+    List<Uint8List> encoded,
+  ) async {
+    final List<ui.Image> thumbnails = [];
+    try {
+      for (final bytes in encoded) {
+        final ui.Codec codec = await ui.instantiateImageCodec(bytes);
+        try {
+          thumbnails.add((await codec.getNextFrame()).image);
+        } finally {
+          codec.dispose();
+        }
+      }
+    } catch (_) {
+      for (final thumbnail in thumbnails) {
+        thumbnail.dispose();
+      }
+      rethrow;
+    }
+    return thumbnails;
+  }
+
   int get _max => widget.controller.duration.inMilliseconds;
 
   void _processInteraction(
@@ -814,13 +1007,41 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
     /// Whether the interaction is a simple tap rather than a drag.
     bool isTap = false,
   }) {
+    final metrics = _SliderMetrics(size: size, style: widget.style, max: _max);
+
     if (isStart) {
       if (_dragMode == null) {
         _dragMode = computeDragMode(localPosition, size: size);
         _dragLocalOffset = localPosition;
         _cachedCropStart = widget.editorController.value.crop?.start;
         _cachedCropEnd = widget.editorController.value.crop?.end;
+        _pointerCancelled = false;
+
+        if (_dragMode!.isCrop) {
+          // The crop is previewed until the gesture ends, with the player
+          // paused so the preview can follow the handle.
+          widget.controller.pause();
+          widget.editorController.beginCropGesture();
+        }
       }
+    } else if (_dragMode == null) {
+      // An update or end without a start (the start was cancelled).
+      return;
+    }
+
+    if (isEnd && _pointerCancelled) {
+      // The system took the pointer away mid-gesture; the recognizer reports
+      // that as an end, but nothing was released on purpose.
+      _cancelInteraction();
+      return;
+    }
+
+    if ((_dragMode?.isCrop ?? false) &&
+        !widget.editorController.isInCropGesture) {
+      // The transaction was ended from outside the slider (an undo, a reset);
+      // the rest of this gesture is void.
+      _resetInteraction();
+      return;
     }
 
     if (_dragMode == _AmphitheatreEditorSliderDragMode.playbackHead ||
@@ -830,7 +1051,7 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
             _cachedCropStart == Duration.zero &&
             _cachedCropEnd == widget.controller.duration)) {
       _handleNewPlayerPosition(
-        size,
+        metrics,
         localPosition: localPosition,
         pauseBefore: isStart,
         playAfter: isEnd,
@@ -840,43 +1061,73 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
         _cachedCropStart != null &&
         _cachedCropEnd != null) {
       _handleNewCropPosition(
-        size,
+        metrics,
         dragMode: _dragMode!,
         localPosition: localPosition,
         localOrigin: _dragLocalOffset!,
-
-        // Only write history at the end of the drag as this is the moment
-        // where the edit is 'locked in'.
-        writeHistory: isEnd,
+        isEnd: isEnd,
       );
     }
 
     if (isEnd) {
-      _dragMode = null;
-      _dragLocalOffset = null;
-      _cachedCropStart = null;
-      _cachedCropEnd = null;
+      // The gesture is one history entry, written now that it is 'locked in'.
+      widget.editorController.endCropGesture();
+      _resetInteraction();
     }
   }
 
+  /// Abandons the current gesture: the crop captured when it began is
+  /// restored (without a history entry) and the drag state is cleared.
+  ///
+  /// Also invoked when a drag wins the gesture arena over the tap that
+  /// preceded it; the drag then starts afresh from the pointer-down position
+  /// (see [DragStartBehavior.down]).
+  void _cancelInteraction() {
+    if (_dragMode == null) return;
+
+    if (_dragMode!.isCrop) {
+      widget.editorController.cancelCropGesture();
+    }
+    _resetInteraction();
+  }
+
+  void _resetInteraction() {
+    _dragMode = null;
+    _dragLocalOffset = null;
+    _cachedCropStart = null;
+    _cachedCropEnd = null;
+    _dragStarted = false;
+    _pointerCancelled = false;
+  }
+
+  void _onHorizontalDragStart(Size size, DragStartDetails details) {
+    _dragStarted = true;
+    _processInteraction(
+      size,
+      localPosition: details.localPosition,
+      isStart: true,
+    );
+  }
+
+  /// The drag recognizer also reports a cancel when it loses the arena to the
+  /// tap that preceded it (on every plain tap, in fact); only a drag that
+  /// started has anything to cancel.
+  void _onHorizontalDragCancel() {
+    if (_dragStarted) _cancelInteraction();
+  }
+
   void _handleNewCropPosition(
-    Size size, {
+    _SliderMetrics metrics, {
     required _AmphitheatreEditorSliderDragMode dragMode,
     required Offset localPosition,
     required Offset localOrigin,
-    required bool writeHistory,
+    required bool isEnd,
   }) {
     final Duration duration = widget.controller.duration;
     final int durationMilliseconds = duration.inMilliseconds;
 
-    final double padding =
-        widget.style.cropHandleSize * 2 + widget.style.borderThickness * 3;
-
-    final double dragOffsetPercentage =
-        (localPosition.dx - localOrigin.dx) / (size.width - padding);
-
     final dragOffset = Duration(
-      milliseconds: (dragOffsetPercentage * _max).floor(),
+      milliseconds: metrics.deltaValueFor(localPosition.dx - localOrigin.dx),
     );
 
     Duration cropStart = dragMode.isCropStart
@@ -950,15 +1201,18 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
       }
     }
 
-    widget.editorController.crop(
-      start: cropStart,
-      end: cropEnd,
-      writeHistory: writeHistory,
+    widget.editorController.previewCrop(start: cropStart, end: cropEnd);
+
+    // Preview the frame under the handle being dragged. The release always
+    // seeks, so the preview ends on the frame the handle was left on.
+    _autoSeek(
+      dragMode.isCropEnd && !dragMode.isCropStart ? cropEnd : cropStart,
+      force: isEnd,
     );
   }
 
   void _handleNewPlayerPosition(
-    Size size, {
+    _SliderMetrics metrics, {
     required Offset localPosition,
     bool pauseBefore = false,
     bool playAfter = false,
@@ -967,19 +1221,8 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
       widget.controller.pause();
     }
 
-    final double startPadding =
-        widget.style.cropHandleSize + widget.style.borderThickness;
-
-    final double endPadding =
-        (widget.style.cropHandleSize + widget.style.borderThickness) * 2;
-
-    final double dragPercentage =
-        (localPosition.dx - startPadding) / (size.width - endPadding);
-
     widget.controller.seekTo(
-      Duration(
-        milliseconds: (dragPercentage * _max).floor(),
-      ),
+      Duration(milliseconds: metrics.valueFor(localPosition.dx)),
     );
 
     if (playAfter) {
@@ -987,70 +1230,129 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: EdgeInsets.all(widget.style.borderThickness / 2),
-        child: SizedBox.fromSize(
-          size: Size.fromHeight(widget.height),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final size = Size(constraints.maxWidth, constraints.maxHeight);
+  static const _timestampStyle = TextStyle(
+    color: Colors.white70,
+    fontSize: 12,
+    fontFeatures: [FontFeature.tabularFigures()],
+  );
 
-              return GestureDetector(
-                onTapDown: (details) => _processInteraction(
-                  size,
-                  localPosition: details.localPosition,
-                  isStart: true,
-                  // We can't use isTap here because we don't know if it's a
-                  // tap or not!
-                ),
-                onTapUp: (details) => _processInteraction(
-                  size,
-                  localPosition: details.localPosition,
-                  isEnd: true,
-                  isTap: true,
-                ),
-                onHorizontalDragStart: (details) => _processInteraction(
-                  size,
-                  localPosition: details.localPosition,
-                  isStart: true,
-                ),
-                onHorizontalDragUpdate: (details) => _processInteraction(
-                  size,
-                  localPosition: details.localPosition,
-                ),
-                onHorizontalDragEnd: (details) => _processInteraction(
-                  size,
-                  localPosition: details.localPosition,
-                  isEnd: true,
-                ),
-                child: CustomPaint(
-                  willChange: true,
-                  size: size,
-                  painter: _AmphitheatreEditorSliderPainter(
-                    style: widget.style,
-                    value: widget.controller.position.inMilliseconds,
-                    max: _max,
-                  ),
-                  foregroundPainter:
-                      (widget.editorController.value.crop != null)
-                          ? _AmphitheatreEditorSliderCropPainter(
-                              size: size,
-                              style: widget.style,
-                              cropStart: widget.editorController.value.crop!
-                                  .start.inMilliseconds,
-                              cropEnd: widget.editorController.value.crop!.end
-                                  .inMilliseconds,
-                              max: _max,
-                              cropStartIcon: _cropStartIcon,
-                              cropEndIcon: _cropEndIcon,
-                            )
-                          : null,
-                ),
-              );
-            },
+  /// The row under the track: the selection's start, its length, and its end.
+  Widget _buildTimestamps(BuildContext context) {
+    final AmphitheatreEditorActionCrop? crop =
+        widget.editorController.value.crop;
+    if (crop == null || !widget.controller.isInitialized) {
+      return const SizedBox.shrink();
+    }
+
+    final bool hours = widget.controller.duration.hasHours;
+
+    return Padding(
+      padding: EdgeInsets.only(
+        top: 8,
+        left: widget.style.cropHandleSize,
+        right: widget.style.cropHandleSize,
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(crop.start.format(hours: hours), style: _timestampStyle),
+          Text(
+            getLocalizationDelegate(context)
+                .selectedDuration((crop.end - crop.start).format()),
+            style: _timestampStyle.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+            ),
           ),
-        ),
+          Text(crop.end.format(hours: hours), style: _timestampStyle),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: EdgeInsets.all(widget.style.borderThickness / 2),
+            child: SizedBox.fromSize(
+              size: Size.fromHeight(widget.height),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final size =
+                      Size(constraints.maxWidth, constraints.maxHeight);
+
+                  unawaited(_maybeLoadThumbnails(size));
+
+                  return Listener(
+                    // Seen before the recognizers see the event, so a drag
+                    // end that follows a system cancel can roll back.
+                    onPointerCancel: (_) => _pointerCancelled = true,
+                    child: GestureDetector(
+                      // A drag that wins over the preceding tap starts from
+                      // the pointer-down position, so the handle it began on
+                      // is the handle it moves (see _cancelInteraction).
+                      dragStartBehavior: DragStartBehavior.down,
+                      onTapDown: (details) => _processInteraction(
+                        size,
+                        localPosition: details.localPosition,
+                        isStart: true,
+                        // We can't use isTap here because we don't know if
+                        // it's a tap or not!
+                      ),
+                      onTapUp: (details) => _processInteraction(
+                        size,
+                        localPosition: details.localPosition,
+                        isEnd: true,
+                        isTap: true,
+                      ),
+                      onTapCancel: _cancelInteraction,
+                      onHorizontalDragStart: (details) =>
+                          _onHorizontalDragStart(size, details),
+                      onHorizontalDragUpdate: (details) =>
+                          _processInteraction(
+                        size,
+                        localPosition: details.localPosition,
+                      ),
+                      onHorizontalDragEnd: (details) => _processInteraction(
+                        size,
+                        localPosition: details.localPosition,
+                        isEnd: true,
+                      ),
+                      onHorizontalDragCancel: _onHorizontalDragCancel,
+                      child: CustomPaint(
+                        willChange: true,
+                        size: size,
+                        painter: _AmphitheatreEditorSliderPainter(
+                          style: widget.style,
+                          value: widget.controller.position.inMilliseconds,
+                          max: _max,
+                          thumbnails: _thumbnails,
+                        ),
+                        foregroundPainter:
+                            (widget.editorController.value.crop != null)
+                                ? _AmphitheatreEditorSliderCropPainter(
+                                    size: size,
+                                    style: widget.style,
+                                    cropStart: widget.editorController.value
+                                        .crop!.start.inMilliseconds,
+                                    cropEnd: widget.editorController.value
+                                        .crop!.end.inMilliseconds,
+                                    max: _max,
+                                    cropStartIcon: _cropStartIcon,
+                                    cropEndIcon: _cropEndIcon,
+                                  )
+                                : null,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+          _buildTimestamps(context),
+        ],
       );
 
   _AmphitheatreEditorSliderDragMode computeDragMode(
@@ -1068,15 +1370,20 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
       _AmphitheatreEditorSliderDragMode.playbackHead;
 }
 
+/// Paints the timeline itself: the track, the filmstrip thumbnails, the
+/// playback head and the border. The crop selection is painted on top by
+/// [_AmphitheatreEditorSliderCropPainter].
 class _AmphitheatreEditorSliderPainter extends CustomPainter {
   final int value;
   final int max;
   final AmphitheatreEditorStyle style;
+  final List<ui.Image> thumbnails;
 
   const _AmphitheatreEditorSliderPainter({
     required this.value,
     required this.max,
     required this.style,
+    required this.thumbnails,
   });
 
   @override
@@ -1084,27 +1391,27 @@ class _AmphitheatreEditorSliderPainter extends CustomPainter {
       other is _AmphitheatreEditorSliderPainter &&
       value == other.value &&
       max == other.max &&
-      style == other.style;
+      style == other.style &&
+      listEquals(thumbnails, other.thumbnails);
 
   @override
-  int get hashCode => Object.hashAll([value, max, style]);
+  int get hashCode =>
+      Object.hashAll([value, max, style, Object.hashAll(thumbnails)]);
 
   @override
   bool shouldRepaint(_AmphitheatreEditorSliderPainter old) => old != this;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final borderRRect = RRect.fromRectAndCorners(
-      Offset(style.cropHandleSize + style.borderThickness, 0) &
-          Size(
-            size.width - ((style.cropHandleSize + style.borderThickness) * 2),
-            size.height,
-          ),
-      topLeft: style.borderRadius.topLeft,
-      topRight: style.borderRadius.topRight,
-      bottomLeft: style.borderRadius.bottomLeft,
-      bottomRight: style.borderRadius.bottomRight,
-    );
+    final metrics = _SliderMetrics(size: size, style: style, max: max);
+    final RRect borderRRect = metrics.trackRRect;
+
+    canvas
+      ..save()
+      ..clipRRect(borderRRect)
+      ..drawRect(metrics.trackRect, Paint()..color = style.trackColor);
+
+    _paintFilmstrip(canvas, metrics);
 
     if (max > 0) {
       final linePaint = Paint()
@@ -1112,19 +1419,16 @@ class _AmphitheatreEditorSliderPainter extends CustomPainter {
         ..strokeWidth = style.lineThickness
         ..color = style.lineColor;
 
-      final double linePosition =
-          _valueToPosition(style: style, value: value, max: max, size: size);
+      final double linePosition = metrics.positionFor(value);
 
-      canvas
-        ..saveLayer(Offset.zero & size, Paint())
-        ..clipRRect(borderRRect)
-        ..drawLine(
-          Offset(linePosition, 0),
-          Offset(linePosition, size.height),
-          linePaint,
-        )
-        ..restore();
+      canvas.drawLine(
+        Offset(linePosition, 0),
+        Offset(linePosition, size.height),
+        linePaint,
+      );
     }
+
+    canvas.restore();
 
     final borderPaint = Paint()
       ..style = PaintingStyle.stroke
@@ -1134,27 +1438,42 @@ class _AmphitheatreEditorSliderPainter extends CustomPainter {
     canvas.drawRRect(borderRRect, borderPaint);
   }
 
-  /// Using the [style] to account for borders and other design elements, this
-  /// function computes the relative position on the [AmphitheatreEditorSlider]
-  /// for the [value].
-  ///
-  /// [max] is the maximum possible value (i.e., the duration of the video) and
-  /// this is used to interpolate the position relative to the [size] of the
-  /// [AmphitheatreEditorSlider].
-  static double _valueToPosition({
-    required AmphitheatreEditorStyle style,
-    required int value,
-    required int max,
-    required Size size,
-  }) =>
-      style.cropHandleSize +
-      style.borderThickness +
-      (value.floorToDouble() / max.floorToDouble()) *
-          (size.width -
-              (style.lineThickness / 2) -
-              style.borderThickness -
-              (style.cropHandleSize + style.borderThickness) * 2) +
-      (style.borderThickness / 2);
+  /// Paints the filmstrip thumbnails in equal cells across the track, each
+  /// cover-fitted (centered and cropped) into its cell.
+  void _paintFilmstrip(Canvas canvas, _SliderMetrics metrics) {
+    if (thumbnails.isEmpty) return;
+
+    final Rect track = metrics.trackRect;
+    final double cellWidth = track.width / thumbnails.length;
+    final paint = Paint()..filterQuality = FilterQuality.low;
+
+    for (var i = 0; i < thumbnails.length; i++) {
+      final ui.Image image = thumbnails[i];
+      final cell = Rect.fromLTWH(
+        track.left + i * cellWidth,
+        track.top,
+        cellWidth,
+        track.height,
+      );
+
+      final double imageWidth = image.width.toDouble();
+      final double imageHeight = image.height.toDouble();
+      // Cover-fit: the larger scale fills the cell on both axes.
+      final double scaleX = cell.width / imageWidth;
+      final double scaleY = cell.height / imageHeight;
+      final scale = scaleX > scaleY ? scaleX : scaleY;
+      final double sourceWidth = cell.width / scale;
+      final double sourceHeight = cell.height / scale;
+      final source = Rect.fromLTWH(
+        (imageWidth - sourceWidth) / 2,
+        (imageHeight - sourceHeight) / 2,
+        sourceWidth,
+        sourceHeight,
+      );
+
+      canvas.drawImageRect(image, source, cell, paint);
+    }
+  }
 }
 
 class _AmphitheatreEditorSliderCropPainter extends CustomPainter {
@@ -1206,7 +1525,7 @@ class _AmphitheatreEditorSliderCropPainter extends CustomPainter {
   /// not yet been initialized) this function always returns null to indicate
   /// that a crop action should not be performed.
   ///
-  /// See also: [_AmphitheatreEditorSliderPainter._valueToPosition].
+  /// See also: [_SliderMetrics.positionFor].
   static _AmphitheatreEditorSliderDragMode? computeCropDragMode(
     Offset position, {
     required AmphitheatreEditorStyle style,
@@ -1218,23 +1537,13 @@ class _AmphitheatreEditorSliderCropPainter extends CustomPainter {
     if (cropStart == null || cropEnd == null) return null;
 
     final double cropHitboxWidth = style.borderThickness + style.cropHandleSize;
+    final metrics = _SliderMetrics(size: size, style: style, max: max);
 
     final double startOffset =
-        _AmphitheatreEditorSliderPainter._valueToPosition(
-              style: style,
-              value: cropStart,
-              max: max,
-              size: size,
-            ) -
-            (style.borderThickness / 2);
+        metrics.positionFor(cropStart) - (style.borderThickness / 2);
 
-    final double endOffset = _AmphitheatreEditorSliderPainter._valueToPosition(
-          style: style,
-          value: cropEnd,
-          max: max,
-          size: size,
-        ) -
-        (style.borderThickness / 2);
+    final double endOffset =
+        metrics.positionFor(cropEnd) - (style.borderThickness / 2);
 
     final leftCropHandleHitbox = RRect.fromRectAndCorners(
       Offset(startOffset - cropHitboxWidth, 0) &
@@ -1309,27 +1618,41 @@ class _AmphitheatreEditorSliderCropPainter extends CustomPainter {
       final cropBorderFill = Paint.from(cropBorderStroke)
         ..style = PaintingStyle.fill;
 
-      final double startPosition =
-          _AmphitheatreEditorSliderPainter._valueToPosition(
-        style: style,
-        value: cropStart,
-        max: max,
-        size: size,
-      );
+      final metrics = _SliderMetrics(size: size, style: style, max: max);
+      final double startPosition = metrics.positionFor(cropStart);
       final double endPosition =
-          _AmphitheatreEditorSliderPainter._valueToPosition(
-                style: style,
-                value: cropEnd,
-                max: max,
-                size: size,
-              ) +
-              style.borderThickness;
+          metrics.positionFor(cropEnd) + style.borderThickness;
 
       // Start and end positions that factor in the border.
       final double startPositionWithBorder =
           startPosition - (style.borderThickness / 2);
       final double endPositionWithBorder =
           (endPosition - startPosition) + (style.lineThickness / 2);
+
+      // Dim the parts of the timeline outside of the selection.
+      final scrimPaint = Paint()..color = style.selectionDimColor;
+      canvas
+        ..save()
+        ..clipRRect(metrics.trackRRect)
+        ..drawRect(
+          Rect.fromLTRB(
+            metrics.trackLeft,
+            0,
+            startPositionWithBorder,
+            size.height,
+          ),
+          scrimPaint,
+        )
+        ..drawRect(
+          Rect.fromLTRB(
+            startPositionWithBorder + endPositionWithBorder,
+            0,
+            metrics.trackRight,
+            size.height,
+          ),
+          scrimPaint,
+        )
+        ..restore();
 
       // Draw the main rectangle.
       final outerCropBorder = RRect.fromRectAndRadius(

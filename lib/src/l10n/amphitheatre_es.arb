@@ -10,5 +10,6 @@
   "replay": "Repetir",
   "preparingToExportVideo": "Preparando la exportación del video...",
   "exportingVideo": "Exportando el video ({progress})...",
-  "unknownError": "Se ha producido un error desconocido."
+  "unknownError": "Se ha producido un error desconocido.",
+  "selectedDuration": "{time} seleccionados"
 }

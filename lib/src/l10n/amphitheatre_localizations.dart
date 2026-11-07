@@ -64,13 +64,15 @@ import 'amphitheatre_localizations_es.dart';
 /// property.
 abstract class AmphitheatreLocalizations {
   AmphitheatreLocalizations(String locale)
-      : localeName = intl.Intl.canonicalizedLocale(locale.toString());
+    : localeName = intl.Intl.canonicalizedLocale(locale.toString());
 
   final String localeName;
 
   static AmphitheatreLocalizations? of(BuildContext context) {
     return Localizations.of<AmphitheatreLocalizations>(
-        context, AmphitheatreLocalizations);
+      context,
+      AmphitheatreLocalizations,
+    );
   }
 
   static const LocalizationsDelegate<AmphitheatreLocalizations> delegate =
@@ -88,17 +90,17 @@ abstract class AmphitheatreLocalizations {
   /// of delegates is preferred or required.
   static const List<LocalizationsDelegate<dynamic>> localizationsDelegates =
       <LocalizationsDelegate<dynamic>>[
-    delegate,
-    GlobalMaterialLocalizations.delegate,
-    GlobalCupertinoLocalizations.delegate,
-    GlobalWidgetsLocalizations.delegate,
-  ];
+        delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+      ];
 
   /// A list of this localizations delegate's supported locales.
   static const List<Locale> supportedLocales = <Locale>[
     Locale('en'),
     Locale('es'),
-    Locale('es', '419')
+    Locale('es', '419'),
   ];
 
   /// Label for the cancel button. This replaces the close button in the editor.
@@ -166,6 +168,12 @@ abstract class AmphitheatreLocalizations {
   /// In en, this message translates to:
   /// **'An unknown error occurred.'**
   String get unknownError;
+
+  /// Shown under the editor's timeline, indicating the length of the current selection (e.g., '00:42 selected').
+  ///
+  /// In en, this message translates to:
+  /// **'{time} selected'**
+  String selectedDuration(String time);
 }
 
 class _AmphitheatreLocalizationsDelegate
@@ -175,7 +183,8 @@ class _AmphitheatreLocalizationsDelegate
   @override
   Future<AmphitheatreLocalizations> load(Locale locale) {
     return SynchronousFuture<AmphitheatreLocalizations>(
-        lookupAmphitheatreLocalizations(locale));
+      lookupAmphitheatreLocalizations(locale),
+    );
   }
 
   @override
@@ -208,8 +217,9 @@ AmphitheatreLocalizations lookupAmphitheatreLocalizations(Locale locale) {
   }
 
   throw FlutterError(
-      'AmphitheatreLocalizations.delegate failed to load unsupported locale "$locale". This is likely '
-      'an issue with the localizations generation tool. Please file an issue '
-      'on GitHub with a reproducible sample app and the gen-l10n configuration '
-      'that was used.');
+    'AmphitheatreLocalizations.delegate failed to load unsupported locale "$locale". This is likely '
+    'an issue with the localizations generation tool. Please file an issue '
+    'on GitHub with a reproducible sample app and the gen-l10n configuration '
+    'that was used.',
+  );
 }

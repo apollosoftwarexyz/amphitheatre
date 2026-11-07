@@ -193,6 +193,7 @@ public class AmphitheatrePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
                     case "checkCropVideoDiskSpace": result(try await checkCropVideoDiskSpace(args: try CropVideoArgs.parse(arguments: call.arguments)))
                     case "startCropVideo": result(try await startCropVideo(args: try CropVideoArgs.parse(arguments: call.arguments)))
                     case "awaitCropVideo": result(try await awaitCropVideo(args: try SessionArgs.parse(arguments: call.arguments)))
+                    case "getThumbnails": result(try await getThumbnails(args: try GetThumbnailsArgs.parse(arguments: call.arguments)))
                     default: result(FlutterMethodNotImplemented)
                 }
             } catch is CancellationError {
@@ -559,6 +560,112 @@ public class AmphitheatrePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         } catch {
             throw FlutterError(code: "UNEXPECTED_ERROR", message: "an unknown error has occurred", details: nil)
         }
+    }
+
+    public struct GetThumbnailsArgs {
+        /// No more than this many frames are extracted, however many are asked for.
+        static let maxCount = 50
+
+        /// Frames are never taller than this, however tall a frame is asked for.
+        static let maxHeightLimit = 1080
+
+        let path: String
+        let count: Int
+        let maxHeight: Int
+
+        public static func parse(arguments: Any?) throws(FlutterError) -> GetThumbnailsArgs {
+            guard let rawArgs = arguments as? NSDictionary,
+                  let path = rawArgs["path"] as? NSString as? String,
+                  let count = (rawArgs["count"] as? NSNumber)?.intValue,
+                  let maxHeight = (rawArgs["maxHeight"] as? NSNumber)?.intValue
+            else {
+                throw FlutterError(code: "INVALID_ARGS", message: "invalid arguments for getThumbnails", details: nil)
+            }
+
+            guard count >= 1, maxHeight >= 1 else {
+                throw FlutterError(code: "INVALID_ARGS", message: "invalid arguments for getThumbnails: 'count' and 'maxHeight' must be positive", details: nil)
+            }
+
+            return GetThumbnailsArgs(path: path, count: min(count, maxCount), maxHeight: min(maxHeight, maxHeightLimit))
+        }
+    }
+
+    /// Extract evenly spaced JPEG thumbnails of the video for the editor's
+    /// filmstrip (sampled at the midpoint of each cell, so the first and last
+    /// frames are representative), each at most `maxHeight` pixels tall.
+    ///
+    /// Frames that fail to decode are skipped and an unreadable video yields
+    /// an empty list: the filmstrip is an enhancement, never an error.
+    @MainActor
+    private func getThumbnails(args: GetThumbnailsArgs) async throws(FlutterError) -> [FlutterStandardTypedData] {
+        var isDirectory: ObjCBool = false
+        if !FileManager.default.fileExists(atPath: args.path, isDirectory: &isDirectory) {
+            throw FlutterError(code: "SEARCH_FAIL", message: "failed to locate the provided file path", details: nil)
+        }
+
+        if isDirectory.boolValue {
+            throw FlutterError(code: "INVALID_FILE_PATH", message: "the provided file path is a directory", details: args.path)
+        }
+
+        let url: URL
+        if #available(iOS 16.0, *) {
+            url = URL.init(filePath: args.path, directoryHint: URL.DirectoryHint.notDirectory)
+        } else {
+            url = URL(fileURLWithPath: args.path, isDirectory: false)
+        }
+
+        let count = args.count
+        let maxHeight = args.maxHeight
+
+        // Decoding runs off the main actor; only the encoded bytes come back.
+        let encoded: [Data] = await Task.detached(priority: .utility) {
+            let asset = AVURLAsset(url: url)
+            let generator = AVAssetImageGenerator(asset: asset)
+            generator.appliesPreferredTrackTransform = true
+            generator.maximumSize = CGSize(width: 0, height: CGFloat(maxHeight))
+
+            let duration: CMTime
+            if #available(iOS 15, *) {
+                duration = (try? await asset.load(.duration)) ?? .zero
+            } else {
+                duration = asset.duration
+            }
+
+            // An unreadable or indefinite duration would produce invalid
+            // times; there are no thumbnails to extract.
+            let seconds = CMTimeGetSeconds(duration)
+            guard seconds.isFinite, seconds > 0 else {
+                return []
+            }
+
+            let times: [CMTime] = (0..<count).map { index in
+                CMTime(
+                    seconds: seconds * (2.0 * Double(index) + 1.0) / (2.0 * Double(count)),
+                    preferredTimescale: 600)
+            }
+
+            var thumbnails: [Data] = []
+
+            if #available(iOS 16, *) {
+                for await imageResult in generator.images(for: times) {
+                    if let cgImage = try? imageResult.image,
+                       let jpeg = UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.7) {
+                        thumbnails.append(jpeg)
+                    }
+                }
+            } else {
+                for time in times {
+                    if let cgImage = try? generator.copyCGImage(at: time, actualTime: nil),
+                       let jpeg = UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.7) {
+                        thumbnails.append(jpeg)
+                    }
+                }
+            }
+
+            return thumbnails
+        }.value
+
+        return encoded.map { FlutterStandardTypedData(bytes: $0) }
     }
 
     /// Deliver a progress update for the given session to Flutter.

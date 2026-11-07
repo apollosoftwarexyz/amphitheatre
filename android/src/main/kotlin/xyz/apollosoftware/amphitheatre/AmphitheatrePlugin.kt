@@ -1,9 +1,11 @@
 package xyz.apollosoftware.amphitheatre
 
 import android.app.Activity
+import android.graphics.Bitmap
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
+import android.os.Build
 import android.os.Handler
 import android.os.StatFs
 import android.util.Log
@@ -33,6 +35,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -507,6 +510,85 @@ class AmphitheatrePlugin: FlutterPlugin, EventChannel.StreamHandler, MethodCallH
   }
 
   /**
+   * Extract evenly spaced JPEG thumbnails of the video for the editor's filmstrip (sampled at the
+   * midpoint of each cell, so the first and last frames are representative), each at most
+   * [GetThumbnailsArgs.maxHeight] pixels tall.
+   *
+   * Frames that fail to decode are skipped and an unreadable video yields an empty list: the
+   * filmstrip is an enhancement, never an error.
+   */
+  internal fun getThumbnails(args: GetThumbnailsArgs): List<ByteArray> {
+    val (path, count, maxHeight) = args
+
+    if (!File(path).isFile) {
+      throw FlutterError(code = "ERR_SEARCH_FAIL", message = "Failed to locate the provided file.")
+    }
+
+    val thumbnails = ArrayList<ByteArray>(count)
+    val retriever = MediaMetadataRetriever()
+
+    try {
+      retriever.setDataSource(path)
+      val durationMs =
+        retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: return thumbnails
+
+      for (i in 0 until count) {
+        val timeUs = (durationMs * 1000L * (2L * i + 1)) / (2L * count)
+
+        var bitmap = frameAt(retriever, timeUs, maxHeight) ?: continue
+        if (bitmap.height > maxHeight) {
+          val scaledWidth = (bitmap.width * maxHeight / bitmap.height).coerceAtLeast(1)
+          val scaled = Bitmap.createScaledBitmap(bitmap, scaledWidth, maxHeight, true)
+          bitmap.recycle()
+          bitmap = scaled
+        }
+
+        val stream = ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 70, stream)
+        bitmap.recycle()
+        thumbnails.add(stream.toByteArray())
+      }
+    } catch (_: Exception) {
+      // Whatever was extracted is returned.
+    } finally {
+      try {
+        retriever.release()
+      } catch (_: Exception) {}
+    }
+
+    return thumbnails
+  }
+
+  /**
+   * Decode one frame near [timeUs], pre-scaled by the decoder to fit [maxHeight] where the platform
+   * supports it (API 27+); older devices decode at full size and the caller scales down.
+   */
+  private fun frameAt(retriever: MediaMetadataRetriever, timeUs: Long, maxHeight: Int): Bitmap? {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+      val rawHeight = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull()
+      val rawWidth = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull()
+      val rotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+
+      if (rawHeight != null && rawWidth != null) {
+        // The retriever returns frames in display orientation, so the target box uses the rotated
+        // dimensions.
+        val rotated = rotation == 90 || rotation == 270
+        val height = if (rotated) rawWidth else rawHeight
+        val width = if (rotated) rawHeight else rawWidth
+
+        if (height > maxHeight) {
+          val scaledWidth = (width * maxHeight / height).coerceAtLeast(1)
+          return retriever.getScaledFrameAtTime(
+            timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, scaledWidth, maxHeight,
+          )
+        }
+      }
+    }
+
+    return retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+  }
+
+  /**
    * Look up the session for [args], for [awaitCropVideo].
    *
    * Called on the platform thread, where the method call arrives, so that the lookup happens in
@@ -568,6 +650,7 @@ class AmphitheatrePlugin: FlutterPlugin, EventChannel.StreamHandler, MethodCallH
           "checkCropVideoDiskSpace" -> result.success(emptyResponse(checkCropVideoDiskSpace(CropVideoArgs.parse(call))))
           "startCropVideo" -> result.success(startCropVideo(CropVideoArgs.parse(call)))
           "awaitCropVideo" -> result.success(awaitCropVideo(awaitedSession!!))
+          "getThumbnails" -> result.success(getThumbnails(GetThumbnailsArgs.parse(call)))
           else -> result.notImplemented()
         }
       } catch (error: FlutterError) {
@@ -593,6 +676,36 @@ class AmphitheatrePlugin: FlutterPlugin, EventChannel.StreamHandler, MethodCallH
         } catch (_: ClassCastException) {
           throw FlutterError(code = "INVALID_ARGS", message = "invalid arguments for deleteFile")
         }
+      }
+    }
+
+  }
+
+  internal data class GetThumbnailsArgs(val path: String, val count: Int, val maxHeight: Int) {
+
+    companion object {
+      /** No more than this many frames are extracted, however many are asked for. */
+      const val MAX_COUNT = 50
+
+      /** Frames are never taller than this, however tall a frame is asked for. */
+      const val MAX_HEIGHT = 1080
+
+      fun parse(call: MethodCall): GetThumbnailsArgs {
+        val args = try {
+          GetThumbnailsArgs(
+            path = call.argument<String>("path")!!,
+            count = (call.argument<Any>("count")!! as Number).toInt(),
+            maxHeight = (call.argument<Any>("maxHeight")!! as Number).toInt(),
+          )
+        } catch (_: Exception) {
+          throw FlutterError(code = "INVALID_ARGS", message = "invalid arguments for getThumbnails")
+        }
+
+        if (args.count < 1 || args.maxHeight < 1) {
+          throw FlutterError(code = "INVALID_ARGS", message = "invalid arguments for getThumbnails: 'count' and 'maxHeight' must be positive")
+        }
+
+        return args.copy(count = min(args.count, MAX_COUNT), maxHeight = min(args.maxHeight, MAX_HEIGHT))
       }
     }
 
