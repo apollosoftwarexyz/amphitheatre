@@ -56,6 +56,48 @@ void main() {
       expect(host.deletedFiles, isEmpty);
     });
 
+    test('getThumbnails passes its arguments to the host', () async {
+      host.thumbnails = [Uint8List.fromList([1, 2, 3])];
+
+      final List<Uint8List> thumbnails = await platform.getThumbnails(
+        path: '/videos/example.mp4',
+        count: 12,
+        maxHeight: 144,
+      );
+
+      final MethodCall call =
+          host.log.singleWhere((call) => call.method == 'getThumbnails');
+      expect(
+        call.arguments,
+        equals({
+          'path': '/videos/example.mp4',
+          'count': 12,
+          'maxHeight': 144,
+        }),
+      );
+      expect(thumbnails, equals([Uint8List.fromList([1, 2, 3])]));
+    });
+
+    test('getThumbnails keeps only the byte lists the host answers', () async {
+      host.thumbnails = [
+        Uint8List.fromList([1]),
+        'not bytes',
+        null,
+        Uint8List.fromList([2]),
+      ];
+
+      final List<Uint8List> thumbnails = await platform.getThumbnails(
+        path: '/videos/example.mp4',
+        count: 2,
+        maxHeight: 64,
+      );
+
+      expect(
+        thumbnails,
+        equals([Uint8List.fromList([1]), Uint8List.fromList([2])]),
+      );
+    });
+
     test('cropVideo starts a session with the correct arguments', () async {
       final AmphitheatreCropVideoSession session = await platform.cropVideo(
         path: '/videos/example.mp4',
@@ -170,7 +212,7 @@ void main() {
             isA<AmphitheatreCropVideoStatus>().having(
               (s) => s.quality,
               'quality',
-              AmphitheatreCropVideoQuality.presetFullHD,
+              AmphitheatreCropVideoQuality.passthrough,
             ),
           ),
         );
@@ -260,7 +302,7 @@ void main() {
         await expectation;
       });
 
-      test('subscribing after completion reports an unknown session', () async {
+      test('subscribing after completion ends the stream', () async {
         final AmphitheatreCropVideoSession session = await startSession();
         await host.completeCropVideo(session.id);
         expect(
@@ -271,13 +313,7 @@ void main() {
           ),
         );
 
-        await expectLater(
-          session.status,
-          emitsError(
-            isA<PlatformException>()
-                .having((e) => e.code, 'code', 'UNKNOWN_SESSION'),
-          ),
-        );
+        await expectLater(session.status, emitsDone);
       });
 
       test('cancelling the subscription cancels the crop session', () async {

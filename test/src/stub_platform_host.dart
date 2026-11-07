@@ -78,6 +78,10 @@ final class StubAmphitheatrePlatform {
   /// Whether to mock a valid platform channel, or not.
   bool valid = true;
 
+  /// The thumbnails answered by `getThumbnails`, as the host encodes them:
+  /// byte lists, or anything else to exercise the Dart side's filtering.
+  List<Object?> thumbnails = const [];
+
   /// The arguments received by the event channel's `onListen`, in order.
   final List<Object?> statusListenArguments = [];
 
@@ -90,7 +94,8 @@ final class StubAmphitheatrePlatform {
 
   int _nextSessionId = 0;
 
-  /// The status event channel's backing controller, while registered.
+  /// The status event channel's backing controllers, one per `listen`,
+  /// while registered.
   ///
   /// Owned here rather than registered via
   /// `TestDefaultBinaryMessenger.setMockStreamHandler` because that helper
@@ -99,11 +104,17 @@ final class StubAmphitheatrePlatform {
   /// tear-down waits on a done future whose listeners live in the test's
   /// fake-async zone and never run, so the test hangs (flutter/flutter#190807).
   /// Remove this and go back to `setMockStreamHandler` once the fix lands.
-  // Closed in [_unregisterStatusStream], which the lint cannot see.
-  // ignore: close_sinks
-  StreamController<Object?>? _statusController;
+  ///
+  /// A subscription gets its own controller so that ending one session's
+  /// stream (as the platforms do when it concludes) leaves a later session's
+  /// stream usable.
+  final List<StreamController<Object?>> _statusControllers = [];
 
-  /// Forwards [_statusController] events onto the platform channel.
+  /// Forwards the active subscription's events onto the platform channel.
+  ///
+  /// Only the most recent `listen` forwards: a native `EventChannel` drops
+  /// the events (and the end) of a sink that a later `listen` superseded or
+  /// that a `cancel` released.
   StreamSubscription<Object?>? _statusForwarder;
 
   /// Construct a [StubAmphitheatrePlatform].
@@ -128,63 +139,73 @@ final class StubAmphitheatrePlatform {
 
   /// Equivalent of `TestDefaultBinaryMessenger.setMockStreamHandler` for
   /// [eventChannel], minus the unguarded close in tear-down (see
-  /// [_statusController]).
+  /// [_statusControllers]).
   void _registerStatusStream() {
-    final TestDefaultBinaryMessenger messenger =
-        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
-    // Closed in [_unregisterStatusStream], which the lint cannot see.
-    // ignore: close_sinks
-    final StreamController<Object?> controller = _statusController =
-        StreamController<Object?>();
-
-    messenger.setMockMethodCallHandler(
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
       MethodChannel(eventChannel.name, eventChannel.codec),
       (MethodCall call) async => switch (call.method) {
-        'listen' => _onStatusListen(
-          call.arguments,
-          MockStreamHandlerEventSink(controller.sink),
-        ),
+        'listen' => _onStatusListen(call.arguments, _newStatusSink()),
         'cancel' => _onStatusCancel(call.arguments),
         _ => throw UnimplementedError('Method ${call.method} not implemented'),
       },
     );
+  }
+
+  /// A sink for one subscription, whose events (and end) are forwarded onto
+  /// the platform channel while it is the active one.
+  MockStreamHandlerEventSink _newStatusSink() {
+    final TestDefaultBinaryMessenger messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    // Closed in [_unregisterStatusStream], which the lint cannot see.
+    // ignore: close_sinks
+    final controller = StreamController<Object?>();
+    _statusControllers.add(controller);
 
     void forward(ByteData? message) =>
         messenger.handlePlatformMessage(eventChannel.name, message, null);
 
+    // A new listener supersedes the previous one.
+    _stopForwarding();
     _statusForwarder = controller.stream.listen(
-      (Object? event) =>
-          forward(eventChannel.codec.encodeSuccessEnvelope(event)),
-      onError: (Object? error) {
-        if (error is! PlatformException) {
-          throw ArgumentError('Stream error must be a PlatformException');
-        }
-        forward(
-          eventChannel.codec.encodeErrorEnvelope(
-            code: error.code,
-            message: error.message,
-            details: error.details,
-          ),
-        );
-      },
-      onDone: () => forward(null),
+        (Object? event) =>
+            forward(eventChannel.codec.encodeSuccessEnvelope(event)),
+        onError: (Object? error) {
+          if (error is! PlatformException) {
+            throw ArgumentError('Stream error must be a PlatformException');
+          }
+          forward(
+            eventChannel.codec.encodeErrorEnvelope(
+              code: error.code,
+              message: error.message,
+              details: error.details,
+            ),
+          );
+        },
+        onDone: () => forward(null),
     );
+
+    return MockStreamHandlerEventSink(controller.sink);
+  }
+
+  /// Stops forwarding the active subscription's events onto the channel.
+  void _stopForwarding() {
+    unawaited(_statusForwarder?.cancel());
+    _statusForwarder = null;
   }
 
   void _unregisterStatusStream() {
-    final StreamController<Object?>? controller = _statusController;
-    _statusController = null;
-    unawaited(_statusForwarder?.cancel());
-    _statusForwarder = null;
-    if (controller != null && !controller.isClosed) {
-      unawaited(controller.close());
+    _stopForwarding();
+    for (final StreamController<Object?> controller in _statusControllers) {
+      if (!controller.isClosed) unawaited(controller.close());
     }
+    _statusControllers.clear();
   }
 
   Future<Object?> _handleMethodCall(MethodCall call) async {
     log.add(call);
 
-    void missingImplementation() {
+    Never missingImplementation() {
       throw MissingPluginException(
         'No implementation found for method ${call.method} '
         'on channel $channelName',
@@ -210,9 +231,18 @@ final class StubAmphitheatrePlatform {
         return _startCropVideo(call);
       case 'awaitCropVideo':
         return _awaitCropVideo(call);
+      case 'getThumbnails':
+        return _getThumbnails(call);
       default:
         missingImplementation();
     }
+  }
+
+  List<Object?> _getThumbnails(MethodCall call) {
+    _arg<String>(call, 'path');
+    _arg<int>(call, 'count');
+    _arg<int>(call, 'maxHeight');
+    return thumbnails;
   }
 
   void _deleteFile(MethodCall call) {
@@ -257,7 +287,7 @@ final class StubAmphitheatrePlatform {
       start: start,
       end: end,
       // A null quality resolves to the platform default.
-      quality: quality ?? 'presetFullHD',
+      quality: quality ?? 'passthrough',
       // The output is a session-unique file in the temporary directory.
       outputPath: '$temporaryDirectory/$sessionId.mp4',
     );
@@ -289,6 +319,25 @@ final class StubAmphitheatrePlatform {
           'progress': 1.0,
         })
         ..endOfStream();
+    }
+  }
+
+  /// Conclude the export for [sessionId] with a failure: the `awaitCropVideo`
+  /// future errors with [code] and [message], the session is discarded and,
+  /// if a listener is bound, the status stream is ended.
+  Future<void> failCropVideo(
+    String sessionId, {
+    String code = 'EXPORT_FAILED',
+    String message = 'an error occurred during the export session',
+  }) async {
+    final Completer<MockStreamHandlerEventSink>? sink = _statusSinks[sessionId];
+    cropSessions.remove(sessionId)!;
+    _pendingExports
+        .remove(sessionId)!
+        .completeError(PlatformException(code: code, message: message));
+
+    if (sink != null && sink.isCompleted) {
+      (await sink.future).endOfStream();
     }
   }
 
@@ -357,11 +406,9 @@ final class StubAmphitheatrePlatform {
         : null;
 
     if (sessionId is! String || !cropSessions.containsKey(sessionId)) {
-      events.error(
-        code: 'UNKNOWN_SESSION',
-        message: 'Invalid session ID.',
-        details: sessionId,
-      );
+      // The platforms end the stream of a session they no longer know (it may
+      // have concluded already) rather than erroring it.
+      events.endOfStream();
       return;
     }
 
@@ -382,6 +429,9 @@ final class StubAmphitheatrePlatform {
     final Object? sessionId = arguments is Map<Object?, Object?>
         ? arguments['sessionId']
         : null;
+
+    // The released sink's later events (and end) go nowhere.
+    _stopForwarding();
 
     if (sessionId is String) {
       cancelledSessions.add(sessionId);

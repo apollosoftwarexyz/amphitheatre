@@ -355,6 +355,138 @@ void main() {
       expect(controller.hasRedo, isFalse);
     });
 
+    group('crop gesture', () {
+      AmphitheatreEditorActionCrop crop(int startSeconds, int endSeconds) =>
+          AmphitheatreEditorActionCrop(
+            start: Duration(seconds: startSeconds),
+            end: Duration(seconds: endSeconds),
+          );
+
+      /// A controller with one committed crop, [a], and nothing to redo.
+      AmphitheatreEditorController withCrop(AmphitheatreEditorActionCrop a) =>
+          AmphitheatreEditorController()..crop(start: a.start, end: a.end);
+
+      test('previews replace the value without writing history', () {
+        final AmphitheatreEditorController controller = withCrop(crop(0, 10))
+          ..beginCropGesture()
+          ..previewCrop(start: const Duration(seconds: 1), end: const Duration(seconds: 10))
+          ..previewCrop(start: const Duration(seconds: 2), end: const Duration(seconds: 10));
+
+        expect(controller.isInCropGesture, isTrue);
+        expect(controller.value.crop, equals(crop(2, 10)));
+
+        // The one entry is still the initial crop's.
+        controller
+          ..endCropGesture()
+          ..undo();
+        expect(controller.value.crop, equals(crop(0, 10)));
+        controller.undo();
+        expect(controller.value.crop, isNull);
+        expect(controller.hasUndo, isFalse);
+      });
+
+      test('the release writes the value from before the gesture, once', () {
+        final AmphitheatreEditorController controller = withCrop(crop(0, 10))
+          ..beginCropGesture()
+          ..previewCrop(start: const Duration(seconds: 1), end: const Duration(seconds: 10))
+          ..previewCrop(start: const Duration(seconds: 2), end: const Duration(seconds: 10))
+          ..previewCrop(start: const Duration(seconds: 3), end: const Duration(seconds: 10))
+          ..endCropGesture();
+
+        expect(controller.isInCropGesture, isFalse);
+        expect(controller.value.crop, equals(crop(3, 10)));
+
+        controller.undo();
+        expect(controller.value.crop, equals(crop(0, 10)));
+        controller.undo();
+        expect(controller.value.crop, isNull);
+      });
+
+      test('a release at the last preview position still writes the entry', () {
+        final AmphitheatreEditorController controller = withCrop(crop(0, 10))
+          ..beginCropGesture()
+          ..previewCrop(start: const Duration(seconds: 2), end: const Duration(seconds: 10))
+          // The release reports the same position as the last update.
+          ..previewCrop(start: const Duration(seconds: 2), end: const Duration(seconds: 10))
+          ..endCropGesture();
+
+        expect(controller.value.crop, equals(crop(2, 10)));
+        controller.undo();
+        expect(controller.value.crop, equals(crop(0, 10)));
+      });
+
+      test('a gesture that ends where it began writes nothing', () {
+        final AmphitheatreEditorController controller = withCrop(crop(0, 10))
+          ..beginCropGesture()
+          ..previewCrop(start: const Duration(seconds: 2), end: const Duration(seconds: 10))
+          ..previewCrop(start: Duration.zero, end: const Duration(seconds: 10))
+          ..endCropGesture();
+
+        expect(controller.value.crop, equals(crop(0, 10)));
+        controller.undo();
+        expect(controller.value.crop, isNull);
+      });
+
+      test('a cancelled gesture restores the value and leaves both stacks', () {
+        final AmphitheatreEditorController controller = withCrop(crop(0, 10))
+          ..crop(start: const Duration(seconds: 5), end: const Duration(seconds: 10))
+          ..undo();
+        expect(controller.value.crop, equals(crop(0, 10)));
+        expect(controller.hasRedo, isTrue);
+
+        controller
+          ..beginCropGesture()
+          ..previewCrop(start: const Duration(seconds: 2), end: const Duration(seconds: 10))
+          ..cancelCropGesture();
+
+        expect(controller.isInCropGesture, isFalse);
+        expect(controller.value.crop, equals(crop(0, 10)));
+        expect(controller.hasRedo, isTrue);
+        controller.redo();
+        expect(controller.value.crop, equals(crop(5, 10)));
+        controller
+          ..undo()
+          ..undo();
+        expect(controller.value.crop, isNull);
+      });
+
+      test('previews keep the redo stack and the release clears it', () {
+        final AmphitheatreEditorController controller = withCrop(crop(0, 10))
+          ..crop(start: const Duration(seconds: 5), end: const Duration(seconds: 10))
+          ..undo()
+          ..beginCropGesture()
+          ..previewCrop(start: const Duration(seconds: 2), end: const Duration(seconds: 10));
+        expect(controller.hasRedo, isTrue);
+
+        controller.endCropGesture();
+        expect(controller.hasRedo, isFalse);
+        expect(controller.value.crop, equals(crop(2, 10)));
+      });
+
+      test('undo during a gesture ends it first', () {
+        final AmphitheatreEditorController controller = withCrop(crop(0, 10))
+          ..beginCropGesture()
+          ..previewCrop(start: const Duration(seconds: 2), end: const Duration(seconds: 10))
+          ..undo();
+
+        expect(controller.isInCropGesture, isFalse);
+        // The gesture became the entry that was undone.
+        expect(controller.value.crop, equals(crop(0, 10)));
+        expect(controller.hasRedo, isTrue);
+        controller.redo();
+        expect(controller.value.crop, equals(crop(2, 10)));
+      });
+
+      test('previewCrop outside a gesture is a crop without history', () {
+        final AmphitheatreEditorController controller = withCrop(crop(0, 10))
+          ..previewCrop(start: const Duration(seconds: 2), end: const Duration(seconds: 10));
+
+        expect(controller.value.crop, equals(crop(2, 10)));
+        controller.undo();
+        expect(controller.value.crop, isNull);
+      });
+    });
+
     group('notifies listeners', () {
 
       late AmphitheatreEditorController controller;

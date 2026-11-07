@@ -733,10 +733,16 @@ class AmphitheatrePlugin: FlutterPlugin, EventChannel.StreamHandler, MethodCallH
     data class Unknown(override val rawValue: String) : CropVideoQuality(rawValue)
 
     companion object {
-      /** The default is a stream copy, as on iOS. */
-      val default = Passthrough
+      /**
+       * The default is a stream copy, as on iOS.
+       *
+       * A getter, like [values]: a companion field would be assigned by this class's static
+       * initialiser, which also runs when the class is first reached through one of its objects,
+       * whose own initialisation is then still in progress, so the field would capture null.
+       */
+      val default: CropVideoQuality get() = Passthrough
 
-      val values = arrayOf(PresetHD, PresetFullHD, Highest, Passthrough)
+      val values: Array<CropVideoQuality> get() = arrayOf(PresetHD, PresetFullHD, Highest, Passthrough)
 
       fun parse(value: String?): CropVideoQuality {
         if (value == null || value == "default") {

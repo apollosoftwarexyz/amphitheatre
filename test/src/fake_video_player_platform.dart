@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:video_player_platform_interface/video_player_platform_interface.dart';
 
@@ -7,10 +8,23 @@ final class FakeVideoPlayerPlatform extends VideoPlayerPlatform {
   /// The duration reported for every created video.
   final Duration duration;
 
+  /// When set, [createWithOptions] throws it, as the video player does from
+  /// `setMixWithOthers` or `createWithOptions` before its error handler is
+  /// registered.
+  final Exception? creationError;
+
+  /// When set, the video's event stream delivers this error instead of the
+  /// initialization event.
+  final String? errorDescription;
+
   var _nextPlayerId = 0;
 
   /// Construct a [FakeVideoPlayerPlatform].
-  FakeVideoPlayerPlatform({this.duration = const Duration(seconds: 60)});
+  FakeVideoPlayerPlatform({
+    this.duration = const Duration(seconds: 60),
+    this.creationError,
+    this.errorDescription,
+  });
 
   /// Install this fake as the [VideoPlayerPlatform] instance.
   void register() => VideoPlayerPlatform.instance = this;
@@ -22,18 +36,28 @@ final class FakeVideoPlayerPlatform extends VideoPlayerPlatform {
   Future<void> dispose(int playerId) async {}
 
   @override
-  Future<int?> createWithOptions(VideoCreationOptions options) async =>
-      _nextPlayerId++;
+  Future<int?> createWithOptions(VideoCreationOptions options) async {
+    if (creationError != null) throw creationError!;
+    return _nextPlayerId++;
+  }
 
   @override
-  Stream<VideoEvent> videoEventsFor(int playerId) => Stream.value(
-        VideoEvent(
-          eventType: VideoEventType.initialized,
-          duration: duration,
-          size: const Size(1920, 1080),
-          rotationCorrection: 0,
-        ),
+  Stream<VideoEvent> videoEventsFor(int playerId) {
+    if (errorDescription != null) {
+      return Stream.error(
+        PlatformException(code: 'VideoError', message: errorDescription),
       );
+    }
+
+    return Stream.value(
+      VideoEvent(
+        eventType: VideoEventType.initialized,
+        duration: duration,
+        size: const Size(1920, 1080),
+        rotationCorrection: 0,
+      ),
+    );
+  }
 
   @override
   Future<void> setLooping(int playerId, bool looping) async {}

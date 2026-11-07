@@ -24,17 +24,34 @@ void main() {
 
     setUp(() => FakeVideoPlayerPlatform().register());
 
+    /// Whether the editor under test consumed its controller (and so disposes
+    /// it itself).
+    var consumedController = false;
+
     /// Pump the editor inside an app shell and initialize the video (which
     /// sets the default full-length crop), returning the editor route's
     /// result.
-    Future<Future<String?>> pumpEditor(WidgetTester tester) async {
+    ///
+    /// With [coverRoute], a second route is pushed on top of the editor before
+    /// the video initializes, so the editor is not the current route. With
+    /// [consume], the editor consumes (initializes and disposes) its
+    /// controller. [videoController] replaces the default file source.
+    Future<Future<String?>> pumpEditor(
+      WidgetTester tester, {
+      AmphitheatreEditorOptions options = const AmphitheatreEditorOptions(),
+      bool consume = false,
+      bool coverRoute = false,
+      VideoPlayerController? videoController,
+    }) async {
       host = StubAmphitheatrePlatform()
         ..register()
         ..valid = true;
       AmphitheatrePlatform.ensureInitialized();
+      consumedController = consume;
 
       controller = AmphitheatreController(
-        controller: VideoPlayerController.file(File('/videos/example.mp4')),
+        controller: videoController ??
+            VideoPlayerController.file(File('/videos/example.mp4')),
       );
 
       await tester.pumpWidget(
@@ -46,11 +63,26 @@ void main() {
       final NavigatorState navigator = tester.state(find.byType(Navigator));
       final Future<String?> result = navigator.push<String?>(
         MaterialPageRoute<String?>(
-          builder: (_) => AmphitheatreEditor(controller: controller),
+          builder: (_) => consume
+              ? AmphitheatreEditor.consume(
+                  controller: controller,
+                  options: options,
+                )
+              : AmphitheatreEditor(controller: controller, options: options),
         ),
       );
 
-      controller.initialize(autoPlay: false);
+      if (coverRoute) {
+        unawaited(
+          navigator.push<void>(
+            MaterialPageRoute<void>(
+              builder: (_) => const Scaffold(body: Text('cover')),
+            ),
+          ),
+        );
+      }
+
+      if (!consume) controller.initialize(autoPlay: false);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
 
@@ -62,7 +94,7 @@ void main() {
     Future<void> unmountEditor(WidgetTester tester) async {
       host.unregister();
       await tester.pumpWidget(const SizedBox.shrink());
-      controller.dispose();
+      if (!consumedController) unawaited(controller.dispose());
       await tester.pump();
     }
 
@@ -194,12 +226,208 @@ void main() {
       await tester.tap(find.byType(AmphitheatreDoneButton));
       await tester.pumpAndSettle();
 
-      expect(await result, equals('/videos/example.mp4'));
+      expect(await result, equals((await controller.getVideoPath()).path));
       expect(
         host.log.where((call) => call.method == 'startCropVideo'),
         isEmpty,
       );
 
+      await unmountEditor(tester);
+    });
+
+    testWidgets(
+        'a short video with canAutoAccept pops with its own path and starts '
+        'no session', (tester) async {
+      FakeVideoPlayerPlatform(duration: const Duration(seconds: 5)).register();
+      final Future<String?> result = await pumpEditor(
+        tester,
+        options: const AmphitheatreEditorOptions(
+          canAutoAccept: true,
+          minLength: Duration(seconds: 10),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(await result, equals((await controller.getVideoPath()).path));
+      expect(
+        host.log.where((call) => call.method == 'startCropVideo'),
+        isEmpty,
+      );
+
+      await unmountEditor(tester);
+    });
+
+    testWidgets('a short video does not auto-accept behind another route',
+        (tester) async {
+      FakeVideoPlayerPlatform(duration: const Duration(seconds: 5)).register();
+      final Future<String?> result = await pumpEditor(
+        tester,
+        options: const AmphitheatreEditorOptions(
+          canAutoAccept: true,
+          minLength: Duration(seconds: 10),
+        ),
+        coverRoute: true,
+      );
+      var popped = false;
+      unawaited(result.then((_) => popped = true));
+      await tester.pumpAndSettle();
+
+      expect(find.text('cover'), findsOneWidget);
+      expect(popped, isFalse);
+
+      // Back from the covering route, the editor is still there.
+      tester.state<NavigatorState>(find.byType(Navigator)).pop();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AmphitheatreEditorSlider), findsOneWidget);
+      expect(popped, isFalse);
+
+      await unmountEditor(tester);
+    });
+
+    testWidgets(
+        'cancel on the progress screen cancels the session and returns to the '
+        'editor without a message', (tester) async {
+      final Future<String?> result = await pumpEditor(tester);
+      var popped = false;
+      unawaited(result.then((_) => popped = true));
+
+      await startExport(tester);
+      expect(find.byType(AmphitheatreExporterProgress), findsOneWidget);
+      final String sessionId = host.cropSessions.keys.single;
+
+      await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
+      await tester.pumpAndSettle();
+
+      expect(host.cancelledSessions, equals([sessionId]));
+      expect(find.byType(AmphitheatreEditorSlider), findsOneWidget);
+      expect(find.byType(AmphitheatreExporterProgress), findsNothing);
+      expect(find.byType(SnackBar), findsNothing);
+      expect(popped, isFalse);
+
+      await unmountEditor(tester);
+    });
+
+    testWidgets('a failed export offers to try again, which starts a second '
+        'session', (tester) async {
+      final Future<String?> result = await pumpEditor(tester);
+
+      await startExport(tester);
+      final String firstSession = host.cropSessions.keys.single;
+      await host.failCropVideo(firstSession, message: 'the muxer gave up');
+      await tester.pumpAndSettle();
+
+      expect(find.text('the muxer gave up'), findsOneWidget);
+      expect(find.byType(AmphitheatreEditorSlider), findsOneWidget);
+
+      await tester.tap(find.text('Try again'));
+      await tester.pump();
+
+      expect(
+        host.log.where((call) => call.method == 'startCropVideo'),
+        hasLength(2),
+      );
+      final String secondSession = host.cropSessions.keys.single;
+      expect(secondSession, isNot(equals(firstSession)));
+
+      await host.completeCropVideo(secondSession);
+      await tester.pumpAndSettle();
+      expect(
+        await result,
+        equals(
+          '${StubAmphitheatrePlatform.kMockTemporaryDirectory}/'
+          '$secondSession.mp4',
+        ),
+      );
+
+      await unmountEditor(tester);
+    });
+
+    testWidgets(
+        'a consumed controller survives a failed export and a second attempt '
+        'succeeds', (tester) async {
+      final Future<String?> result = await pumpEditor(tester, consume: true);
+
+      await startExport(tester);
+      await host.failCropVideo(host.cropSessions.keys.single);
+      await tester.pumpAndSettle();
+
+      // Back in the editor with the same, working player.
+      expect(find.byType(AmphitheatreEditorSlider), findsOneWidget);
+      expect(controller.isInitialized, isTrue);
+      expect(controller.hasError, isFalse);
+
+      await tester.tap(find.text('Try again'));
+      await tester.pump();
+      final String secondSession = host.cropSessions.keys.single;
+      await host.completeCropVideo(secondSession);
+      await tester.pumpAndSettle();
+
+      expect(
+        await result,
+        equals(
+          '${StubAmphitheatrePlatform.kMockTemporaryDirectory}/'
+          '$secondSession.mp4',
+        ),
+      );
+
+      await unmountEditor(tester);
+    });
+
+    testWidgets('a cancel during preparation starts no session',
+        (tester) async {
+      final Future<String?> result = await pumpEditor(tester);
+      var popped = false;
+      unawaited(result.then((_) => popped = true));
+
+      final AmphitheatreEditorState editor =
+          tester.state(find.byType(AmphitheatreEditor));
+      editor.editorController.crop(
+        start: const Duration(seconds: 1),
+        end: const Duration(seconds: 5),
+      );
+      await tester.pump();
+
+      // The export is still resolving the video path when it is cancelled.
+      unawaited(editor.produceOutputVideo());
+      expect(editor.exporting, isTrue);
+      editor.cancelExport();
+      await tester.pumpAndSettle();
+
+      expect(
+        host.log.where((call) => call.method == 'startCropVideo'),
+        isEmpty,
+      );
+      expect(find.byType(AmphitheatreEditorSlider), findsOneWidget);
+      expect(find.byType(SnackBar), findsNothing);
+      expect(popped, isFalse);
+
+      await unmountEditor(tester);
+    });
+
+    testWidgets('a video path failure returns to the editor', (tester) async {
+      // An asset that does not exist: resolving its path fails before any
+      // session is started.
+      final Future<String?> result = await pumpEditor(
+        tester,
+        videoController: VideoPlayerController.asset('missing.mp4'),
+      );
+      var popped = false;
+      unawaited(result.then((_) => popped = true));
+
+      await startExport(tester);
+      await tester.pumpAndSettle();
+
+      expect(find.text('An unknown error occurred.'), findsOneWidget);
+      expect(find.byType(AmphitheatreEditorSlider), findsOneWidget);
+      expect(
+        host.log.where((call) => call.method == 'startCropVideo'),
+        isEmpty,
+      );
+      expect(popped, isFalse);
+
+      // Allow the snack bar to expire before unmounting.
+      await tester.pump(const Duration(seconds: 5));
       await unmountEditor(tester);
     });
   });
