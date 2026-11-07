@@ -765,11 +765,20 @@ void main() {
             tester.view.devicePixelRatio;
         expect(
           thumbnailsCall().arguments,
-          equals({
-            'path': '/videos/example.mp4',
-            'count': (track.width / (track.height * 1920 / 1080)).ceil(),
-            'maxHeight': (track.height * devicePixelRatio).round(),
-          }),
+          allOf(
+            hasLength(3),
+            // The path is pinned with endsWith like the route results above: on
+            // Windows the controller reports it with the drive prefix.
+            containsPair('path', endsWith('/videos/example.mp4')),
+            containsPair(
+              'count',
+              (track.width / (track.height * 1920 / 1080)).ceil(),
+            ),
+            containsPair(
+              'maxHeight',
+              (track.height * devicePixelRatio).round(),
+            ),
+          ),
         );
 
         int paintedThumbnails() => (tester
