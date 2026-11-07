@@ -176,7 +176,7 @@ abstract class AmphitheatrePlatform extends PlatformInterface {
   AmphitheatrePlatform() : super(token: _token);
 
   /// A non-fungible token used to verify inheritance from this base class.
-  static final Object _token = Object();
+  static final _token = Object();
 
   static AmphitheatrePlatform _instance = AmphitheatrePlatformMethodChannel()
     ..ensureInstanceInitialized();
@@ -308,7 +308,7 @@ final class AmphitheatrePlatformMethodChannel extends AmphitheatrePlatform {
   static const _platformEvents =
       EventChannel('xyz.apollosoftware.amphitheatre/events');
 
-  bool _initialized = false;
+  var _initialized = false;
 
   @override
   void ensureInstanceInitialized() {

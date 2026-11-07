@@ -41,17 +41,17 @@ final class StubCropSession {
 /// arguments.
 final class StubAmphitheatrePlatform {
   /// The name of the plugin's method channel.
-  static const String channelName = 'xyz.apollosoftware.amphitheatre';
+  static const channelName = 'xyz.apollosoftware.amphitheatre';
 
   /// The default fake path reported by `getTemporaryDirectory`.
-  static const String kMockTemporaryDirectory =
+  static const kMockTemporaryDirectory =
       '/tmp/xyz.apollosoftware.amphitheatre';
 
   /// A [MethodChannel] identical (by name) to the one used by the plugin.
-  static const MethodChannel channel = MethodChannel(channelName);
+  static const channel = MethodChannel(channelName);
 
   /// An [EventChannel] identical (by name) to the one used by the plugin.
-  static const EventChannel eventChannel = EventChannel('$channelName/events');
+  static const eventChannel = EventChannel('$channelName/events');
 
   /// The fake path reported by `getTemporaryDirectory`.
   final String temporaryDirectory;
@@ -70,13 +70,13 @@ final class StubAmphitheatrePlatform {
   final Map<String, Completer<String>> _pendingExports = {};
 
   /// Whether the host reports sufficient disk space for crop operations.
-  bool hasSufficientDiskSpace = true;
+  var hasSufficientDiskSpace = true;
 
   /// Whether the host fails `deleteFile` calls with `FILE_REMOVAL_FAILED`.
-  bool failFileDeletion = false;
+  var failFileDeletion = false;
 
   /// Whether to mock a valid platform channel, or not.
-  bool valid = true;
+  var valid = true;
 
   /// The thumbnails answered by `getThumbnails`, as the host encodes them:
   /// byte lists, or anything else to exercise the Dart side's filtering. Null
@@ -103,7 +103,7 @@ final class StubAmphitheatrePlatform {
   /// once the stream has a listener.
   final Map<String, Completer<MockStreamHandlerEventSink>> _statusSinks = {};
 
-  int _nextSessionId = 0;
+  var _nextSessionId = 0;
 
   /// The status event channel's backing controllers, one per `listen`,
   /// while registered.

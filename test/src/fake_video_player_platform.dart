@@ -23,10 +23,10 @@ final class FakeVideoPlayerPlatform extends VideoPlayerPlatform {
   final String? errorDescription;
 
   /// How many times [play] was called, across every player.
-  int playCalls = 0;
+  var playCalls = 0;
 
   /// How many times [pause] was called, across every player.
-  int pauseCalls = 0;
+  var pauseCalls = 0;
 
   /// The positions passed to [seekTo], in order, across every player.
   final List<Duration> seeks = [];

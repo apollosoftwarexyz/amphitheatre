@@ -50,8 +50,7 @@ final class AmphitheatreEditorActionCrop extends AmphitheatreEditorAction {
 /// [AmphitheatreController] (which is for the video) to control the edit
 /// actions that should be applied to the video.
 final class AmphitheatreEditorController with ChangeNotifier {
-  AmphitheatreEditorModifications _value =
-      const AmphitheatreEditorModifications.empty();
+  var _value = const AmphitheatreEditorModifications.empty();
   
   /// The maximum number of history items to retain.
   static const kMaxHistoryLength = 32;
