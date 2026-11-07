@@ -111,39 +111,14 @@ temporary directory. A selection that spans the whole video (and a video accepte
 `AmphitheatreEditorOptions.canAutoAccept`) is not exported: the editor pops with the path of the original video
 itself, so compare the result with your input before deleting it as a temporary file. The default quality,
 `AmphitheatreCropVideoQuality.passthrough`, copies the source streams without re-encoding: the output starts at the key
-frame at or before the start handle (up to one group of pictures early, about a second on most cameras) and keeps the
-source's resolution and bitrate, so a trim takes seconds rather than minutes. The other qualities (`presetHD`,
-`presetFullHD`, `highest`) produce H.264/AAC, re-encoding where the source differs, and the two presets scale down to
-720 or 1080 lines where the source is taller.
+frame at or before the start handle (up to one group of pictures early, about a second on most cameras; on Android
+before 9 the trim is re-encoded instead) and keeps the source's resolution and bitrate, so a trim takes seconds rather
+than minutes. The other qualities (`presetHD`, `presetFullHD`, `highest`) produce H.264/AAC, re-encoding where the
+source differs, and the two presets cap the short side at 720 or 1080 pixels where the source is larger.
 
-The export screen offers to cancel, which returns to the editor; a failed export returns to the editor with the
-platform's message and a "Try again" action. Videos no longer than `AmphitheatreEditorOptions.minLength` are accepted
+The export screen offers to cancel, which returns to the editor; a failed export returns to the editor with a message
+and a "Try again" action. Videos no longer than `AmphitheatreEditorOptions.minLength` are accepted
 without showing the editor when `canAutoAccept` is set.
-
-Applications that need the export without the editor can drive it through the platform interface, which is not part
-of the package's public exports (it is supported on a best-effort basis, see its documentation):
-
-```dart
-import 'package:amphitheatre/src/amphitheatre_platform.dart';
-
-final AmphitheatreCropVideoSession session = await getAmphitheatrePlatform().cropVideo(
-  path: inputPath,
-  start: 1000, // milliseconds
-  end: 31000,
-  diskSpacePolicy: AmphitheatreDiskSpacePolicy.abortIfExceeds,
-);
-
-// Subscribe for progress; cancelling this subscription cancels the export, so
-// keep it until the result is in (and release it even if the export fails).
-final StreamSubscription<AmphitheatreCropVideoStatus> status =
-    session.status.listen((status) => print(status.progress));
-
-try {
-  final String outputPath = await session.future;
-} finally {
-  await status.cancel();
-}
-```
 
 ### Localization (l10n) Support
 
