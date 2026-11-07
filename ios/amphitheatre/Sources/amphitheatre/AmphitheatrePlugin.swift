@@ -193,6 +193,10 @@ public class AmphitheatrePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
                     case "checkCropVideoDiskSpace": result(try await checkCropVideoDiskSpace(args: try CropVideoArgs.parse(arguments: call.arguments)))
                     case "startCropVideo": result(try await startCropVideo(args: try CropVideoArgs.parse(arguments: call.arguments)))
                     case "awaitCropVideo": result(try await awaitCropVideo(args: try SessionArgs.parse(arguments: call.arguments)))
+                    case "cancelCropVideo":
+                        // Cancelling an unknown or already settled session is a no-op.
+                        cancelCropVideo(sessionId: try SessionArgs.parse(arguments: call.arguments).sessionId)
+                        result(nil)
                     case "getThumbnails": result(try await getThumbnails(args: try GetThumbnailsArgs.parse(arguments: call.arguments)))
                     default: result(FlutterMethodNotImplemented)
                 }
@@ -483,19 +487,20 @@ public class AmphitheatrePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
                 exportSession.outputURL = outUrl
                 exportSession.outputFileType = AVFileType.mp4
 
-                Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { timer in
+                // The legacy export() exposes no progress stream, so it is
+                // polled. The timer retains the session and self, so it is
+                // stopped on every exit from this block (completion, failure,
+                // or a cancellation that prevents the export from starting);
+                // the timer never invalidates itself.
+                let progressTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
                     // The timer fires on the main run loop.
                     MainActor.assumeIsolated {
-                        let progress = exportSession.progress
-                        if (progress >= 1.0 || ![.unknown, .waiting, .exporting].contains(exportSession.status)) {
-                            timer.invalidate()
-                        }
-
                         if let session = self.sessions[sessionId] {
-                            self.handleCropVideoProgress(session: session, progress: Double(progress))
+                            self.handleCropVideoProgress(session: session, progress: Double(exportSession.progress))
                         }
                     }
                 }
+                defer { progressTimer.invalidate() }
 
                 // Swift cancellation is cooperative and the legacy export()
                 // does not observe it, so the handler stops the session. A task
@@ -512,7 +517,7 @@ public class AmphitheatrePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
                     break
                 case .failed:
                     _ = try? FileManager.default.removeItem(at: outUrl)
-                    throw FlutterError(code: "EXPORT_FAILED", message: "the export session failed", details: nil)
+                    throw FlutterError(code: "EXPORT_FAILED", message: "an error occurred during the export session", details: exportSession.error?.localizedDescription)
                 case .cancelled:
                     _ = try? FileManager.default.removeItem(at: outUrl)
                     throw FlutterError(code: "EXPORT_CANCELLED", message: "the export session was cancelled", details: nil)
@@ -622,7 +627,6 @@ public class AmphitheatrePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             let asset = AVURLAsset(url: url)
             let generator = AVAssetImageGenerator(asset: asset)
             generator.appliesPreferredTrackTransform = true
-            generator.maximumSize = CGSize(width: 0, height: CGFloat(maxHeight))
 
             let duration: CMTime
             if #available(iOS 15, *) {
@@ -637,6 +641,40 @@ public class AmphitheatrePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             guard seconds.isFinite, seconds > 0 else {
                 return []
             }
+
+            // AVFoundation only documents CGSizeZero as "unscaled", not a
+            // single zero component, so both components of maximumSize are
+            // given explicitly. The width is derived from the aspect ratio
+            // of the track as displayed (naturalSize after the preferred
+            // transform, which the generator also applies). Without a video
+            // track there are no frames to extract.
+            let naturalSize: CGSize
+            let preferredTransform: CGAffineTransform
+            if #available(iOS 15, *) {
+                guard let track = try? await asset.loadTracks(withMediaType: .video).first,
+                      let properties = try? await track.load(.naturalSize, .preferredTransform)
+                else {
+                    return []
+                }
+                naturalSize = properties.0
+                preferredTransform = properties.1
+            } else {
+                guard let track = asset.tracks(withMediaType: .video).first else {
+                    return []
+                }
+                naturalSize = track.naturalSize
+                preferredTransform = track.preferredTransform
+            }
+
+            let displaySize = naturalSize.applying(preferredTransform)
+            let displayWidth = abs(displaySize.width)
+            let displayHeight = abs(displaySize.height)
+            guard displayWidth > 0, displayHeight > 0 else {
+                return []
+            }
+
+            let maxWidth = max(1, ceil(CGFloat(maxHeight) * displayWidth / displayHeight))
+            generator.maximumSize = CGSize(width: maxWidth, height: CGFloat(maxHeight))
 
             let times: [CMTime] = (0..<count).map { index in
                 CMTime(

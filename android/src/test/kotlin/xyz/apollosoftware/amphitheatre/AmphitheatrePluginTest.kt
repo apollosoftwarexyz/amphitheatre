@@ -4,6 +4,7 @@ import android.app.Activity
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -171,7 +172,30 @@ internal class AmphitheatrePluginTest {
   fun getThumbnails_reportsAMissingFile() {
     val result = invoke(MethodCall("getThumbnails", mapOf("path" to "/does/not/exist.mp4", "count" to 3, "maxHeight" to 64)))
 
-    verify(result).error("ERR_SEARCH_FAIL", "Failed to locate the provided file.", null)
+    verify(result).error("SEARCH_FAIL", "Failed to locate the provided file.", null)
+  }
+
+  @Test
+  fun getThumbnailsArgs_clampsCountAndMaxHeight() {
+    val args = AmphitheatrePlugin.GetThumbnailsArgs.parse(
+      MethodCall("getThumbnails", mapOf("path" to "/foo/bar", "count" to 500, "maxHeight" to 4000)),
+    )
+
+    assertEquals(AmphitheatrePlugin.GetThumbnailsArgs("/foo/bar", 50, 1080), args)
+  }
+
+  @Test
+  fun getThumbnailsArgs_acceptsAnyNumber() {
+    // The channel codec delivers Int, Long or Double depending on the Dart value.
+    val fromLong = AmphitheatrePlugin.GetThumbnailsArgs.parse(
+      MethodCall("getThumbnails", mapOf("path" to "/foo/bar", "count" to 3L, "maxHeight" to 64L)),
+    )
+    val fromDouble = AmphitheatrePlugin.GetThumbnailsArgs.parse(
+      MethodCall("getThumbnails", mapOf("path" to "/foo/bar", "count" to 3.0, "maxHeight" to 64.0)),
+    )
+
+    assertEquals(AmphitheatrePlugin.GetThumbnailsArgs("/foo/bar", 3, 64), fromLong)
+    assertEquals(AmphitheatrePlugin.GetThumbnailsArgs("/foo/bar", 3, 64), fromDouble)
   }
 
   @Test
@@ -202,6 +226,25 @@ internal class AmphitheatrePluginTest {
     val result = invoke(MethodCall("awaitCropVideo", mapOf("sessionId" to "nope")))
 
     verify(result).error("UNKNOWN_SESSION", "invalid session ID", "nope")
+  }
+
+  @Test
+  fun cancelCropVideo_ignoresAnUnknownSession() {
+    val result = invoke(MethodCall("cancelCropVideo", mapOf("sessionId" to "nope")))
+
+    verify(result).success(null)
+  }
+
+  @Test
+  fun cancelCropVideo_handlesIllegalArguments() {
+    val results = listOf(
+      invoke(MethodCall("cancelCropVideo", null)),
+      invoke(MethodCall("cancelCropVideo", mapOf("foo" to "bar"))),
+    )
+
+    for (result in results) {
+      verify(result).error("INVALID_ARGS", "invalid arguments for session", null)
+    }
   }
 
   /** Not a fan of the backticks... See [Mockito.when] */

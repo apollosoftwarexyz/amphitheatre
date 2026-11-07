@@ -53,12 +53,10 @@ android {
     }
 
     dependencies {
-        implementation("androidx.media3:media3-inspector:1.11.1")
         implementation("androidx.media3:media3-transformer:1.11.1")
         implementation("androidx.media3:media3-effect:1.11.1")
 
-        // Compatibility
-        implementation("org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.11.0")
+        implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
 
         // TODO: remove
 //        implementation(files("/Users/samjakob/development/flutter/bin/cache/artifacts/engine/android-arm64-release/flutter.jar"))

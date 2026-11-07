@@ -35,6 +35,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.UUID
@@ -199,8 +200,8 @@ class AmphitheatrePlugin: FlutterPlugin, EventChannel.StreamHandler, MethodCallH
   /**
    * The export sessions, keyed by session ID.
    *
-   * A session stays here until it is awaited (see [awaitCropVideo]) or cancelled, so an export that
-   * concludes before Flutter gets to await it still delivers its outcome rather than
+   * A session stays here until it is awaited (see [awaitCropVideo]) or cancelled while running, so
+   * an export that concludes before Flutter gets to await it still delivers its outcome rather than
    * `UNKNOWN_SESSION`.
    */
   private var sessions: ConcurrentHashMap<String, AmphitheatreExportSession> = ConcurrentHashMap()
@@ -313,14 +314,12 @@ class AmphitheatrePlugin: FlutterPlugin, EventChannel.StreamHandler, MethodCallH
   /**
    * Start exporting the crop described by [args] and return the ID of the new session.
    *
-   * `passthrough` is a stream copy: the start is moved back to the video sync sample at or before
-   * the requested start and declared a key frame, so media3 transmuxes instead of re-encoding the
-   * whole clip (its trim optimization, which would re-encode only the first GOP, stays off: with it
-   * on, media3 reports progress as permanently unavailable). The output therefore starts up to one
-   * GOP before the handle. When the sample cannot be resolved the requested start is kept and not
-   * declared a key frame, and media3 transcodes as before rather than act on a false assertion. The
-   * named qualities transcode to H.264/AAC: `presetHD` and `presetFullHD` scale down to 720 or
-   * 1080 lines (never up), `highest` keeps the source size.
+   * `passthrough` is a stream copy: on API 28+ the start is moved back to the video sync sample at
+   * or before the requested start and declared a key frame, so media3 transmuxes and the output
+   * starts up to one GOP before the handle. When the sample cannot be resolved the requested start
+   * is kept and media3 transcodes. The named qualities transcode to H.264/AAC: `presetHD` and
+   * `presetFullHD` cap the short side at 720 or 1080 pixels (never scaling up), `highest` keeps the
+   * source size.
    *
    * The output is `<sessionId>.mp4` in the plugin's temporary directory, as on iOS.
    */
@@ -366,24 +365,32 @@ class AmphitheatrePlugin: FlutterPlugin, EventChannel.StreamHandler, MethodCallH
       .setClippingConfiguration(clippingConfiguration)
       .build()
 
-    val targetHeight: Int? = when (quality) {
+    val targetShortSide: Int? = when (quality) {
       CropVideoQuality.PresetHD -> 720
       CropVideoQuality.PresetFullHD -> 1080
       else -> null
     }
 
     val editedMediaItem = EditedMediaItem.Builder(mediaItem).apply {
-      // Only scale down. When the height is unknown (or the file has no video track) no effect is
-      // added: a video effect on an audio-only file fails the export.
-      if (targetHeight != null) {
-        val sourceHeight = displayHeightOf(path)
-        if (sourceHeight > targetHeight) {
-          setEffects(Effects(emptyList(), listOf(Presentation.createForHeight(targetHeight))))
+      // The preset caps the short side of the display-oriented frame (so a portrait clip becomes
+      // 720x1280, not 405x720) and only ever scales down. When the size is unknown (or the file has
+      // no video track) no effect is added: a video effect on an audio-only file fails the export.
+      if (targetShortSide != null) {
+        val size = displaySizeOf(path)
+        if (size != null) {
+          val (width, height) = size
+          val presentation = if (height > width) {
+            if (width > targetShortSide) Presentation.createForWidth(targetShortSide) else null
+          } else {
+            if (height > targetShortSide) Presentation.createForHeight(targetShortSide) else null
+          }
+          if (presentation != null) setEffects(Effects(emptyList(), listOf(presentation)))
         }
       }
     }.build()
 
     val transformer = Transformer.Builder(activity!!.baseContext)
+      // With trim optimization on, media3 reports progress as permanently unavailable.
       .experimentalSetTrimOptimizationEnabled(false)
       .apply {
         if (quality != CropVideoQuality.Passthrough) {
@@ -413,10 +420,11 @@ class AmphitheatrePlugin: FlutterPlugin, EventChannel.StreamHandler, MethodCallH
         ) {
           session.fail(FlutterError(
             code = "EXPORT_FAILED",
-            message = exportException.message ?: "an error occurred during the export session",
+            message = "an error occurred during the export session",
             details = mapOf(
               "errorCode" to exportException.errorCode,
               "errorCodeName" to ExportException.getErrorCodeName(exportException.errorCode),
+              "message" to exportException.message,
             ),
           ))
         }
@@ -427,7 +435,8 @@ class AmphitheatrePlugin: FlutterPlugin, EventChannel.StreamHandler, MethodCallH
       } catch (error: Exception) {
         session.fail(FlutterError(
           code = "EXPORT_FAILED",
-          message = error.message ?: "the export session could not be started",
+          message = "the export session could not be started",
+          details = mapOf("message" to error.message),
         ))
         return@post
       }
@@ -465,9 +474,13 @@ class AmphitheatrePlugin: FlutterPlugin, EventChannel.StreamHandler, MethodCallH
   /**
    * The presentation time, in microseconds, of the video sync sample at or before [startMs] in the
    * file at [path]. A file without a video track has nothing to snap and answers [startMs] itself.
-   * Null when the sample cannot be determined (unreadable file, extractor failure).
+   * Null when the sample cannot be determined (unreadable file, extractor failure). Also null before
+   * API 28: there MediaExtractor's timeline ignores the mp4 edit list that media3 applies, so the
+   * snapped time need not be a sync sample for media3 and declaring it one would be false.
    */
   private fun previousSyncSampleUs(path: String, startMs: Long): Long? {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return null
+
     val extractor = MediaExtractor()
     return try {
       extractor.setDataSource(path)
@@ -486,10 +499,10 @@ class AmphitheatrePlugin: FlutterPlugin, EventChannel.StreamHandler, MethodCallH
   }
 
   /**
-   * The height of the video at [path] in display orientation, or -1 if it cannot be determined
-   * (e.g., the file has no video track).
+   * The (width, height) of the video at [path] in display orientation, or null if it cannot be
+   * determined (e.g., the file has no video track).
    */
-  private fun displayHeightOf(path: String): Int {
+  private fun displaySizeOf(path: String): Pair<Int, Int>? {
     val retriever = MediaMetadataRetriever()
     return try {
       retriever.setDataSource(path)
@@ -497,11 +510,11 @@ class AmphitheatrePlugin: FlutterPlugin, EventChannel.StreamHandler, MethodCallH
       val height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull()
       val rotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
 
-      if (width == null || height == null) -1
-      else if (rotation == 90 || rotation == 270) width
-      else height
+      if (width == null || height == null) null
+      else if (rotation == 90 || rotation == 270) Pair(height, width)
+      else Pair(width, height)
     } catch (_: Exception) {
-      -1
+      null
     } finally {
       try {
         retriever.release()
@@ -521,7 +534,7 @@ class AmphitheatrePlugin: FlutterPlugin, EventChannel.StreamHandler, MethodCallH
     val (path, count, maxHeight) = args
 
     if (!File(path).isFile) {
-      throw FlutterError(code = "ERR_SEARCH_FAIL", message = "Failed to locate the provided file.")
+      throw FlutterError(code = "SEARCH_FAIL", message = "Failed to locate the provided file.")
     }
 
     val thumbnails = ArrayList<ByteArray>(count)
@@ -615,6 +628,20 @@ class AmphitheatrePlugin: FlutterPlugin, EventChannel.StreamHandler, MethodCallH
     }
   }
 
+  /**
+   * Cancel the session for [args] if it is known and still running: the transformer is stopped,
+   * the partial output deleted and the session settled with `EXPORT_CANCELLED`, exactly as the
+   * EventChannel cancel does. An unknown or already settled session is left alone, so an outcome
+   * that has not been awaited yet is still delivered.
+   */
+  internal fun cancelCropVideo(args: SessionArgs) {
+    val session = sessions[args.sessionId] ?: return
+    if (!session.isActive) return
+
+    sessions.remove(args.sessionId, session)
+    session.cancel()
+  }
+
   internal fun emptyResponse(unit: Unit): Any? {
     return null
   }
@@ -647,10 +674,12 @@ class AmphitheatrePlugin: FlutterPlugin, EventChannel.StreamHandler, MethodCallH
           "getTemporaryDirectory" -> result.success(getTemporaryDirectory())
           "getAvailableDiskSpace" -> result.success(getAvailableDiskSpace())
           "deleteFile" -> result.success(emptyResponse(deleteFile(DeleteFileArgs.parse(call))))
-          "checkCropVideoDiskSpace" -> result.success(emptyResponse(checkCropVideoDiskSpace(CropVideoArgs.parse(call))))
-          "startCropVideo" -> result.success(startCropVideo(CropVideoArgs.parse(call)))
+          // Container parsing (MediaExtractor, MediaMetadataRetriever) blocks on file I/O.
+          "checkCropVideoDiskSpace" -> result.success(emptyResponse(withContext(Dispatchers.IO) { checkCropVideoDiskSpace(CropVideoArgs.parse(call)) }))
+          "startCropVideo" -> result.success(withContext(Dispatchers.IO) { startCropVideo(CropVideoArgs.parse(call)) })
           "awaitCropVideo" -> result.success(awaitCropVideo(awaitedSession!!))
-          "getThumbnails" -> result.success(getThumbnails(GetThumbnailsArgs.parse(call)))
+          "cancelCropVideo" -> result.success(emptyResponse(cancelCropVideo(SessionArgs.parse(call))))
+          "getThumbnails" -> result.success(withContext(Dispatchers.IO) { getThumbnails(GetThumbnailsArgs.parse(call)) })
           else -> result.notImplemented()
         }
       } catch (error: FlutterError) {
@@ -720,6 +749,10 @@ class AmphitheatrePlugin: FlutterPlugin, EventChannel.StreamHandler, MethodCallH
 
         return SessionArgs(sessionId)
       }
+
+      fun parse(call: MethodCall): SessionArgs =
+        parse(call.arguments as? Map<*, *>
+          ?: throw FlutterError(code = "INVALID_ARGS", message = "invalid arguments for session"))
     }
 
   }
