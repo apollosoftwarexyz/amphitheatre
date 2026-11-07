@@ -327,15 +327,11 @@ class AmphitheatreEditor extends StatefulWidget {
 
 /// The state for an [AmphitheatreEditor].
 class AmphitheatreEditorState extends State<AmphitheatreEditor> {
-  var _exporting = false;
-  StreamSubscription<AmphitheatreCropVideoStatus>? _exportStatusStream;
-
-  /// Counts the exports started, so that the continuation of an export that
-  /// was cancelled (or whose editor went away) while it awaited the video path
-  /// or the session can tell that it is no longer wanted.
-  var _exportGeneration = 0;
-
-  double? _progress;
+  /// The export in progress, or null while the editor is interactive. A
+  /// cancel replaces it (with null, or with the next export), which is how
+  /// the continuation of an export still awaiting the video path or the
+  /// session learns that it is no longer wanted.
+  _Export? _export;
 
   /// Whether [AmphitheatreEditorOptions.shouldAutoAccept] has been consulted
   /// for the loaded video.
@@ -349,13 +345,13 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
   var _thumbnailsRequested = false;
 
   /// When the video is exporting.
-  bool get exporting => _exporting;
+  bool get exporting => _export != null;
 
   /// The progress of the video export operation.
   ///
   /// If no status events have been received yet (i.e., the export is preparing)
   /// this is null.
-  double? get progress => _progress;
+  double? get progress => _export?.progress;
 
   /// The editor state controller.
   final editorController =
@@ -383,8 +379,7 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
 
   @override
   void dispose() {
-    _exportGeneration++;
-    unawaited(_exportStatusStream?.cancel());
+    unawaited(_export?.cancel());
     widget.controller.removeListener(_maybeAutoAccept);
     editorController.dispose();
     if (widget.consumedController) {
@@ -506,14 +501,15 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
   /// Render the modified video.
   Future<void> produceOutputVideo() async {
     // A "try again" from the SnackBar can outlive the editor.
-    if (_exporting || !mounted) return;
-    final int generation = ++_exportGeneration;
-    bool isCurrent() =>
-        mounted && _exporting && _exportGeneration == generation;
+    if (_export != null || !mounted) return;
+    final export = _Export();
 
-    // Whether a newer export is running; this one must then leave the shared
-    // temporary input alone.
-    bool superseded() => _exporting && _exportGeneration != generation;
+    // Whether the editor is still waiting for this export.
+    bool isCurrent() => mounted && identical(_export, export);
+
+    // Whether a newer export has taken over (a cancel followed by a retry);
+    // this one must then leave the shared temporary input alone.
+    bool superseded() => _export != null && !identical(_export, export);
 
     // A handle still held when the export starts: the slider goes away with
     // the progress screen, so the gesture is abandoned here, while the slider
@@ -523,10 +519,7 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
     // The player stays alive under the progress screen; it must not keep
     // playing there.
     widget.controller.pause();
-    setState(() {
-      _exporting = true;
-      _progress = null;
-    });
+    setState(() => _export = export);
 
     AmphitheatreVideoPath? inputFilePath;
     var inputHandedBack = false;
@@ -559,11 +552,9 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
           return;
         }
 
-        _exportStatusStream = session.status.listen((status) {
-          if (mounted) {
-            setState(() {
-              _progress = status.progress;
-            });
+        export.statusSubscription = session.status.listen((status) {
+          if (isCurrent()) {
+            setState(() => export.progress = status.progress);
           }
         });
 
@@ -628,7 +619,7 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
   /// platform's cancel path); an export still preparing stands down once its
   /// current await returns.
   void cancelExport() {
-    if (!_exporting) return;
+    if (_export == null) return;
     _returnToEditor();
   }
 
@@ -648,18 +639,12 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
 
   /// Return the editor to its interactive state, abandoning any export: the
   /// status subscription is cancelled (which cancels the platform session) and
-  /// the export's continuation is told to stand down.
+  /// the export's continuation sees that it is no longer current.
   void _returnToEditor() {
-    _exportGeneration++;
-    unawaited(_exportStatusStream?.cancel());
-    _exportStatusStream = null;
+    unawaited(_export?.cancel());
 
     if (!mounted) return;
-
-    setState(() {
-      _exporting = false;
-      _progress = null;
-    });
+    setState(() => _export = null);
   }
 
   /// Display the error [message] raised whilst producing the output video and
@@ -682,7 +667,7 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
 
   @override
   Widget build(BuildContext context) {
-    if (_exporting) {
+    if (_export != null) {
       return widget.buildExporterProgress(
         progress: progress,
         onCancel: cancelExport,
@@ -735,6 +720,20 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
       ..add(DiagnosticsProperty<double>('progress', progress))
       ..add(DiagnosticsProperty<bool>('canAcceptChanges', canAcceptChanges));
   }
+}
+
+/// One export attempt by an [AmphitheatreEditor].
+final class _Export {
+  /// The latest progress reported by the session, or null before the first
+  /// status event.
+  double? progress;
+
+  /// The subscription to the session's status, once the session has started.
+  StreamSubscription<AmphitheatreCropVideoStatus>? statusSubscription;
+
+  /// Stop listening to the session's status, which cancels the session on
+  /// the platform (see [AmphitheatreCropVideoSession]).
+  Future<void> cancel() async => statusSubscription?.cancel();
 }
 
 Widget _buildAmphitheatreExporterProgress({
