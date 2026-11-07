@@ -31,3 +31,6 @@ migrate_working_dir/
 .flutter-plugins
 .flutter-plugins-dependencies
 build/
+
+# Written to the package root by test_screenshot during `flutter test`.
+/screenshot.png

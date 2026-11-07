@@ -1,5 +1,6 @@
 /// Automatically generated localizations for Amphitheatre.
 
+// ignore: unused_import
 import 'package:intl/intl.dart' as intl;
 
 import 'amphitheatre_localizations.dart';
@@ -35,13 +36,31 @@ class AmphitheatreLocalizationsEn extends AmphitheatreLocalizations {
   String get replay => 'Replay';
 
   @override
+  String get preparingToExportVideo => 'Preparing to export video...';
+
+  @override
   String exportingVideo(double progress) {
-    final intl.NumberFormat progressNumberFormat = intl.NumberFormat.decimalPercentPattern(
-      locale: localeName,
-      decimalDigits: 1
-    );
+    final intl.NumberFormat progressNumberFormat =
+        intl.NumberFormat.decimalPercentPattern(
+          locale: localeName,
+          decimalDigits: 1,
+        );
     final String progressString = progressNumberFormat.format(progress);
 
     return 'Exporting video ($progressString)...';
+  }
+
+  @override
+  String get unknownError => 'An unknown error occurred.';
+
+  @override
+  String get retry => 'Try again';
+
+  @override
+  String get videoLoadFailed => 'This video can\'t be played.';
+
+  @override
+  String selectedDuration(String time) {
+    return '$time selected';
   }
 }

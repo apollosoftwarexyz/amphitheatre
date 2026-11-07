@@ -19,7 +19,7 @@ enum AmphitheatreVisibility {
 
   /// Evaluates whether the [controller] indicates that a component should be
   /// shown for the given [AmphitheatreVisibility].
-  bool shouldShow(final AmphitheatreController controller) {
+  bool shouldShow(AmphitheatreController controller) {
     switch (this) {
       case never:
         return false;
@@ -67,7 +67,7 @@ sealed class _AmphitheatreAnimatedOpacityIconButton extends StatelessWidget {
   // -- BEGIN: TO OVERRIDE
 
   /// The tooltip to display when the button is held.
-  String _getTooltip(final BuildContext context);
+  String _getTooltip(BuildContext context);
 
   /// The icon to display on the button.
   Widget get _icon;
@@ -77,7 +77,7 @@ sealed class _AmphitheatreAnimatedOpacityIconButton extends StatelessWidget {
   bool get _disabled => false;
 
   /// The action to perform when the button is pressed.
-  void _onPressed(final BuildContext context);
+  void _onPressed(BuildContext context);
 
   // -- END: TO OVERRIDE
 
@@ -85,7 +85,7 @@ sealed class _AmphitheatreAnimatedOpacityIconButton extends StatelessWidget {
   bool get _captionVisible => showCaption.shouldShow(controller);
 
   @override
-  Widget build(final BuildContext context) => IgnorePointer(
+  Widget build(BuildContext context) => IgnorePointer(
         ignoring: !_visible,
         child: AnimatedOpacity(
           opacity: _disabled
@@ -136,7 +136,7 @@ sealed class _AmphitheatreAnimatedOpacityIconButton extends StatelessWidget {
       );
 
   @override
-  void debugFillProperties(final DiagnosticPropertiesBuilder properties) {
+  void debugFillProperties(DiagnosticPropertiesBuilder properties) {
     super.debugFillProperties(properties);
     properties
       ..add(ColorProperty('color', color))
@@ -178,16 +178,16 @@ class AmphitheatreSkipButton extends _AmphitheatreAnimatedOpacityIconButton {
       );
 
   @override
-  String _getTooltip(final BuildContext context) => back
+  String _getTooltip(BuildContext context) => back
       ? getLocalizationDelegate(context).back10Seconds
       : getLocalizationDelegate(context).forward10Seconds;
 
   @override
-  void _onPressed(final BuildContext context) =>
+  void _onPressed(BuildContext context) =>
       controller.seek(back ? -delta : delta);
 
   @override
-  void debugFillProperties(final DiagnosticPropertiesBuilder properties) {
+  void debugFillProperties(DiagnosticPropertiesBuilder properties) {
     super.debugFillProperties(properties);
     properties
       ..add(DiagnosticsProperty<bool>('reverse', back))
@@ -200,7 +200,7 @@ class AmphitheatreSkipButton extends _AmphitheatreAnimatedOpacityIconButton {
 /// [_defaultOnCloseButtonPressed] does).
 typedef AmphitheatreCloseButtonAction = void Function(BuildContext context);
 
-void _defaultOnCloseButtonPressed(final BuildContext context) =>
+void _defaultOnCloseButtonPressed(BuildContext context) =>
     Navigator.of(context).pop();
 
 /// A simple 'Close' button with a tooltip. Pops the [Navigator] when tapped.
@@ -224,14 +224,14 @@ class AmphitheatreCloseButton extends _AmphitheatreAnimatedOpacityIconButton {
   Widget get _icon => const Icon(Icons.close);
 
   @override
-  String _getTooltip(final BuildContext context) =>
+  String _getTooltip(BuildContext context) =>
       getLocalizationDelegate(context).close;
 
   @override
-  void _onPressed(final context) => onPressed(context);
+  void _onPressed(context) => onPressed(context);
 
   @override
-  void debugFillProperties(final DiagnosticPropertiesBuilder properties) {
+  void debugFillProperties(DiagnosticPropertiesBuilder properties) {
     super.debugFillProperties(properties);
     properties.add(
       ObjectFlagProperty<AmphitheatreCloseButtonAction>.has(
@@ -260,7 +260,7 @@ class AmphitheatreCancelButton extends AmphitheatreCloseButton {
   });
 
   @override
-  String _getTooltip(final BuildContext context) =>
+  String _getTooltip(BuildContext context) =>
       getLocalizationDelegate(context).cancel;
 }
 
@@ -282,7 +282,7 @@ class AmphitheatreDoneButton extends _AmphitheatreAnimatedOpacityIconButton {
   });
 
   @override
-  String _getTooltip(final BuildContext context) =>
+  String _getTooltip(BuildContext context) =>
       getLocalizationDelegate(context).done;
 
   @override
@@ -292,10 +292,10 @@ class AmphitheatreDoneButton extends _AmphitheatreAnimatedOpacityIconButton {
   bool get _disabled => onPressed == null;
 
   @override
-  void _onPressed(final BuildContext context) => onPressed?.call(context);
+  void _onPressed(BuildContext context) => onPressed?.call(context);
 
   @override
-  void debugFillProperties(final DiagnosticPropertiesBuilder properties) {
+  void debugFillProperties(DiagnosticPropertiesBuilder properties) {
     super.debugFillProperties(properties);
     properties.add(
       ObjectFlagProperty<void Function(BuildContext context)>.has(
@@ -320,14 +320,14 @@ class AmphitheatreReplayButton extends _AmphitheatreAnimatedOpacityIconButton {
   });
 
   @override
-  String _getTooltip(final BuildContext context) =>
+  String _getTooltip(BuildContext context) =>
       getLocalizationDelegate(context).replay;
 
   @override
   Widget get _icon => const Icon(Icons.replay);
 
   @override
-  void _onPressed(final context) => controller.replay();
+  void _onPressed(context) => controller.replay();
 }
 
 /// An animated play/pause button.
@@ -359,7 +359,7 @@ class AmphitheatreAnimatedPlayPauseButton extends StatefulWidget {
       _AmphitheatreAnimatedPlayPauseButtonState();
 
   @override
-  void debugFillProperties(final DiagnosticPropertiesBuilder properties) {
+  void debugFillProperties(DiagnosticPropertiesBuilder properties) {
     super.debugFillProperties(properties);
     properties
       ..add(ColorProperty('color', color))
@@ -379,7 +379,7 @@ class _AmphitheatreAnimatedPlayPauseButtonState
 
   bool get isPausingOrPaused => _animationController.isForwardOrCompleted;
 
-  void _updateIcon(final bool playing) =>
+  void _updateIcon(bool playing) =>
       playing ? _animationController.reverse() : _animationController.forward();
 
   @override
@@ -409,7 +409,7 @@ class _AmphitheatreAnimatedPlayPauseButtonState
   void didChangeAnimation() => setState(() {});
 
   @override
-  void didUpdateWidget(final AmphitheatreAnimatedPlayPauseButton oldWidget) {
+  void didUpdateWidget(AmphitheatreAnimatedPlayPauseButton oldWidget) {
     super.didUpdateWidget(oldWidget);
 
     if (widget.controller.isPlaying != isPausingOrPaused) {
@@ -418,7 +418,7 @@ class _AmphitheatreAnimatedPlayPauseButtonState
   }
 
   @override
-  Widget build(final BuildContext context) {
+  Widget build(BuildContext context) {
     final String label = widget.controller.isPlaying
         ? getLocalizationDelegate(context).pause
         : getLocalizationDelegate(context).play;
@@ -448,7 +448,7 @@ class _AmphitheatreAnimatedPlayPauseButtonState
   }
 
   @override
-  void debugFillProperties(final DiagnosticPropertiesBuilder properties) {
+  void debugFillProperties(DiagnosticPropertiesBuilder properties) {
     super.debugFillProperties(properties);
     properties
         .add(DiagnosticsProperty<bool>('isPausingOrPaused', isPausingOrPaused));
@@ -471,7 +471,7 @@ class AmphitheatreVideoInfoDisplay extends StatelessWidget {
   });
 
   @override
-  Widget build(final BuildContext context) {
+  Widget build(BuildContext context) {
     final AmphitheatreVideoInfo? info = controller.info;
     if (info == null || info.isEmpty) return const SizedBox.shrink();
 
@@ -506,7 +506,7 @@ class AmphitheatreVideoInfoDisplay extends StatelessWidget {
   }
 
   @override
-  void debugFillProperties(final DiagnosticPropertiesBuilder properties) {
+  void debugFillProperties(DiagnosticPropertiesBuilder properties) {
     super.debugFillProperties(properties);
     properties
       ..add(
@@ -529,7 +529,7 @@ class AmphitheatreVideoControls extends StatefulWidget {
       _AmphitheatreVideoControlsState();
 
   @override
-  void debugFillProperties(final DiagnosticPropertiesBuilder properties) {
+  void debugFillProperties(DiagnosticPropertiesBuilder properties) {
     super.debugFillProperties(properties);
     properties.add(
       DiagnosticsProperty<AmphitheatreController>('controller', controller),
@@ -539,7 +539,7 @@ class AmphitheatreVideoControls extends StatefulWidget {
 
 class _AmphitheatreVideoControlsState extends State<AmphitheatreVideoControls> {
   @override
-  Widget build(final BuildContext context) => IgnorePointer(
+  Widget build(BuildContext context) => IgnorePointer(
         ignoring: !widget.controller.isInitialized,
         child: AnimatedOpacity(
           opacity: widget.controller.isInitialized ? 1 : 0,
@@ -601,7 +601,7 @@ class AmphitheatreProgressSlider extends StatefulWidget {
       _AmphitheatreProgressSliderState();
 
   @override
-  void debugFillProperties(final DiagnosticPropertiesBuilder properties) {
+  void debugFillProperties(DiagnosticPropertiesBuilder properties) {
     super.debugFillProperties(properties);
     properties
       ..add(
@@ -624,7 +624,7 @@ class _AmphitheatreProgressSliderState
       (widget.controller.isPlaying && widget.controller.isBuffering);
 
   @override
-  Widget build(final BuildContext context) => Column(
+  Widget build(BuildContext context) => Column(
         children: [
           if (_isBuffering)
             Padding(
@@ -644,7 +644,7 @@ class _AmphitheatreProgressSliderState
               value: widget.controller.position.inMilliseconds.toDouble(),
               secondaryTrackValue:
                   widget.controller.buffered?.inMilliseconds.toDouble(),
-              onChanged: (final value) {
+              onChanged: (value) {
                 widget.controller.seekTo(
                   Duration(
                     milliseconds: min(
@@ -656,8 +656,8 @@ class _AmphitheatreProgressSliderState
               },
               min: 0,
               max: widget.controller.duration.inMilliseconds.toDouble(),
-              onChangeStart: (final _) => widget.controller.pause(),
-              onChangeEnd: (final value) {
+              onChangeStart: (_) => widget.controller.pause(),
+              onChangeEnd: (value) {
                 if (!widget.controller.isCompleted) {
                   widget.controller.play();
                 }

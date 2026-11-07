@@ -1,0 +1,17 @@
+{
+  "@@locale": "es_419",
+  "cancel": "Cancelar",
+  "close": "Cerrar",
+  "done": "Listo",
+  "back10Seconds": "-10 s",
+  "forward10Seconds": "+10 s",
+  "pause": "Pausa",
+  "play": "Reproducir",
+  "replay": "Repetir",
+  "preparingToExportVideo": "Preparando la exportación del video...",
+  "exportingVideo": "Exportando el video ({progress})...",
+  "unknownError": "Ocurrió un error desconocido.",
+  "retry": "Reintentar",
+  "videoLoadFailed": "Este video no se puede reproducir.",
+  "selectedDuration": "{time} seleccionados"
+}

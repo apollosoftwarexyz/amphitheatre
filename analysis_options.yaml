@@ -11,6 +11,13 @@ analyzer:
     invalid_annotation_target: ignore
   exclude:
     - example/**.dart
+    - /**/*.chopper.dart
+    - /**/*.g.dart
+    - lib/generated/**
+    - /**/third-party/**
+    - build/**
+    - android/**
+    - ios/**
 
 linter:
   rules:
@@ -30,11 +37,10 @@ linter:
     flutter_style_todos: true
     join_return_with_assignment: true
     no_self_assignments: true
-    prefer_final_parameters: true
+    parameter_assignments: true
     prefer_final_fields: true
     prefer_final_in_for_each: true
     prefer_final_locals: true
-    unnecessary_await_in_return: true
     unnecessary_statements: true
     use_super_parameters: true
 
@@ -44,7 +50,8 @@ linter:
     # That said, this is a useful rule to have enabled, so we can catch cases where we do want to await a future and
     # so that there is an explicit decision to not await a future.
     unawaited_futures: true
-    discarded_futures: true
+    # Too many false positives.
+    #    discarded_futures: true
 
     # Dart 3.0 prevents fall-through of non-empty switch cases.
     # Dart 2.19 and lower require explicit breaks (and this rule is not enforced for those versions).
@@ -78,7 +85,6 @@ linter:
     no_runtimeType_toString: true
     noop_primitive_operations: true
 
-    one_member_abstracts: true
     only_throw_errors: true
     package_prefixed_library_names: true
 
@@ -97,7 +103,6 @@ linter:
     prefer_single_quotes: true
     prefer_void_to_null: true
     public_member_api_docs: true
-    require_trailing_commas: true
     sort_unnamed_constructors_first: true
     test_types_in_equals: true
     tighten_type_of_initializing_formals: true
@@ -115,7 +120,6 @@ linter:
 
     unnecessary_raw_strings: true
     use_enums: true
-    use_if_null_to_convert_nulls_to_bools: true
     use_is_even_rather_than_modulo: true
     use_late_for_private_fields_and_variables: true
     use_named_constants: true
@@ -125,15 +129,9 @@ linter:
     use_test_throws_matchers: true
     use_to_and_as_if_applicable: true
 
-    # EXPERIMENTAL
-    # Disabled until performance is checked.
-    # parameter_assignments: true
-
-    # TODO (when this library is updated to Dart 3).
     unnecessary_library_name: true
 
-    # TODO (when Dart 3.6 is released).
     specify_nonobvious_local_variable_types: true
     omit_obvious_local_variable_types: true
     use_truncating_division: true
-#    omit_obvious_property_types: true
+    omit_obvious_property_types: true

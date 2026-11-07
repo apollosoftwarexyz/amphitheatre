@@ -1,1 +1,6 @@
 screenshots/
+coverage/
+coverage-html/
+build/
+screenshot.png
+DEVICE_TESTING.md

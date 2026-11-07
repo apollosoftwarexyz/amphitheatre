@@ -30,14 +30,14 @@ final class AmphitheatreEditorActionCrop extends AmphitheatreEditorAction {
 
   /// Construct an [AmphitheatreEditorActionCrop].
   const AmphitheatreEditorActionCrop({required this.start, required this.end})
-      : assert(end > start, 'end cannot precede start');
+      : assert(end > start, 'end cannot precede or equal start');
 
   @override
   Map<String, int> toJson() =>
       {'start': start.inMilliseconds, 'end': end.inMilliseconds};
 
   @override
-  bool operator ==(final Object other) =>
+  bool operator ==(Object other) =>
       other is AmphitheatreEditorActionCrop &&
       start == other.start &&
       end == other.end;
@@ -50,55 +50,197 @@ final class AmphitheatreEditorActionCrop extends AmphitheatreEditorAction {
 /// [AmphitheatreController] (which is for the video) to control the edit
 /// actions that should be applied to the video.
 final class AmphitheatreEditorController with ChangeNotifier {
-  AmphitheatreEditorModifications _value =
-      const AmphitheatreEditorModifications.empty();
+  var _value = const AmphitheatreEditorModifications.empty();
+  
+  /// The maximum number of history items to retain.
+  static const kMaxHistoryLength = 32;
 
-  final Queue<AmphitheatreEditorModifications> _history = Queue();
+  /// The stack of history items.
+  final MaxSizeStack<AmphitheatreEditorModifications> _history = MaxSizeStack(kMaxHistoryLength);
+
+  /// The stack of 'redo' history items.
+  /// 
+  /// When history items are undone with [undo], the latest modifications are
+  /// written here.
+  final MaxSizeStack<AmphitheatreEditorModifications> _future = MaxSizeStack(kMaxHistoryLength);
+
+  /// The modifications captured when the current crop gesture began (see
+  /// [beginCropGesture]), or null outside a gesture.
+  AmphitheatreEditorModifications? _gestureOrigin;
 
   /// The current set of editor modifications.
   AmphitheatreEditorModifications get value => _value;
 
-  /// Check whether a modification has been applied to the video.
-  bool get hasModification => _history.isNotEmpty;
+  /// Whether a crop gesture is in progress (see [beginCropGesture]).
+  bool get isInCropGesture => _gestureOrigin != null;
+
+  /// Whether a modification has been applied to the video.
+  bool get hasModification => value.isNotEmpty;
+
+  /// Whether there are history items (i.e., whether [undo] can be performed).
+  bool get hasUndo => _history.isNotEmpty;
+
+  /// Whether there are redo items (i.e., wehether [redo] can be performed).
+  bool get hasRedo => _future.isNotEmpty;
 
   /// If [value] is different to [_value], applies the new [value] in its place,
   /// moving the old value to the end of the [_history] queue.
-  ///
-  /// When [irreversible] is true, the entry is not added to the history. If
-  /// there are already history items, a [StateError] is thrown because the
-  /// intention would be ambiguous
+  /// 
+  /// If [writeHistory] is true, the action is written to the history stack.
+  /// This allows a user to undo the action. This is not done automatically to
+  /// avoid writing unnecessary or excessive history items.
   void _applyNewValue(
-    final AmphitheatreEditorModifications value, {
-    final bool irreversible = false,
+    AmphitheatreEditorModifications value, {
+    required bool writeHistory,
   }) {
-    if (_value != value) {
-      if (!irreversible) {
-        _history.add(_value);
-      } else if (_history.isNotEmpty) {
-        throw StateError(
-          'Cannot perform an irreversible action when there are existing modifications.',
-        );
-      }
-      _value = value;
+    if (_value == value) {
+      notifyListeners();
+      return;
     }
 
+    _future.clear();
+    if (writeHistory) {
+      // Push the new history entry onto the stack.
+      _history.push(_value);
+    }
+
+    _value = value;
     notifyListeners();
   }
 
   /// Crop the video length to only retain the part between [start] and [end].
   ///
+  /// A crop gesture in progress is ended first (see [endCropGesture]).
+  ///
   /// See [AmphitheatreEditorActionCrop].
   void crop({
-    required final Duration start,
-    required final Duration end,
-    final bool irreversible = false,
-  }) =>
-      _applyNewValue(
-        value.copyWith(
-          crop: AmphitheatreEditorActionCrop(start: start, end: end),
-        ),
-        irreversible: irreversible,
-      );
+    required Duration start,
+    required Duration end,
+    bool writeHistory = true,
+  }) {
+    endCropGesture();
+    _applyNewValue(
+      value.copyWith(
+        crop: AmphitheatreEditorActionCrop(start: start, end: end),
+      ),
+      writeHistory: writeHistory,
+    );
+  }
+  
+  /// Begin a crop gesture.
+  ///
+  /// The current [value] is captured. Until [endCropGesture] or
+  /// [cancelCropGesture], [previewCrop] replaces the value without touching
+  /// the undo or redo stacks, so a drag of many updates is at most one history
+  /// entry. Calling this during a gesture does nothing. Every other operation
+  /// on the history ([crop], [undo], [redo], [clearHistory], [reset]) ends a
+  /// gesture in progress before it acts, so the stacks are never edited
+  /// underneath one.
+  void beginCropGesture() {
+    _gestureOrigin ??= _value;
+  }
+
+  /// Preview a crop during a gesture: the value changes and listeners are
+  /// notified, but no history is written and the redo stack is kept.
+  ///
+  /// Outside a gesture this is [crop] with `writeHistory: false`.
+  void previewCrop({required Duration start, required Duration end}) {
+    if (_gestureOrigin == null) {
+      crop(start: start, end: end, writeHistory: false);
+      return;
+    }
+
+    final AmphitheatreEditorModifications next = value.copyWith(
+      crop: AmphitheatreEditorActionCrop(start: start, end: end),
+    );
+    if (_value == next) return;
+
+    _value = next;
+    notifyListeners();
+  }
+
+  /// End the crop gesture.
+  ///
+  /// If the value differs from the one captured by [beginCropGesture], that
+  /// value is pushed onto the history once and the redo stack is cleared.
+  /// Does nothing outside a gesture.
+  void endCropGesture() {
+    final AmphitheatreEditorModifications? origin = _gestureOrigin;
+    if (origin == null) return;
+    _gestureOrigin = null;
+
+    if (_value == origin) return;
+
+    _future.clear();
+    _history.push(origin);
+    notifyListeners();
+  }
+
+  /// Cancel the crop gesture: the value captured by [beginCropGesture] is
+  /// restored and both stacks are left as they were. Does nothing outside a
+  /// gesture.
+  void cancelCropGesture() {
+    final AmphitheatreEditorModifications? origin = _gestureOrigin;
+    if (origin == null) return;
+    _gestureOrigin = null;
+
+    if (_value == origin) return;
+
+    _value = origin;
+    notifyListeners();
+  }
+
+  /// Undo the last edit.
+  ///
+  /// A crop gesture in progress is ended first (see [endCropGesture]).
+  void undo() {
+    endCropGesture();
+    if (_history.isNotEmpty) {
+      _future.push(_value);
+      _value = _history.pop();
+      notifyListeners();
+    }
+  }
+
+  /// Redo the last edit.
+  ///
+  /// A crop gesture in progress is ended first (see [endCropGesture]).
+  void redo() {
+    endCropGesture();
+    if (_future.isNotEmpty) {
+      _history.push(_value);
+      _value = _future.pop();
+      notifyListeners();
+    }
+  }
+
+  /// Clear the history stack.
+  /// 
+  /// Note that this just clears the metadata about the changes preventing them
+  /// from being undone with [undo] or redone with [redo]. This does not clear
+  /// the changes themselves.
+  /// 
+  /// To clear the modifications too, use [reset] instead.
+  ///
+  /// A crop gesture in progress is ended first (see [endCropGesture]).
+  void clearHistory() {
+    endCropGesture();
+    _history.clear();
+    _future.clear();
+    notifyListeners();
+  }
+
+  /// Reset all modifications.
+  /// 
+  /// Unlike [clearHistory], this clears the history and all modifications to
+  /// the video.
+  ///
+  /// A crop gesture in progress is ended first (see [endCropGesture]).
+  void reset() {
+    endCropGesture();
+    _value = const AmphitheatreEditorModifications.empty();
+    clearHistory();
+  }
 }
 
 /// The set of modifications to be applied to a video.
@@ -129,14 +271,14 @@ final class AmphitheatreEditorModifications {
   /// Copy the set of modifications with a new modification - either replacing
   /// or adding the modification depending on whether it already exists.
   AmphitheatreEditorModifications copyWith({
-    final AmphitheatreEditorActionCrop? crop,
+    AmphitheatreEditorActionCrop? crop,
   }) =>
       AmphitheatreEditorModifications(crop: crop ?? this.crop);
 
   /// Copy the set of modifications, only replacing modifications when the new
   /// one is specified and there is not an existing modification of that type.
   AmphitheatreEditorModifications copyWithUnique({
-    final AmphitheatreEditorActionCrop? crop,
+    AmphitheatreEditorActionCrop? crop,
   }) =>
       AmphitheatreEditorModifications(
         crop: crop != null && this.crop == null ? crop : this.crop,
@@ -145,7 +287,7 @@ final class AmphitheatreEditorModifications {
   /// Build a JSON representation of the modifications.
   Map<String, AmphitheatreEditorAction> toJson() => _modifications.fold(
         <String, AmphitheatreEditorAction>{},
-        (final value, final entry) {
+        (value, entry) {
           if (entry == null) return value;
           value[entry.id] = entry;
           return value;
@@ -160,7 +302,7 @@ final class AmphitheatreEditorModifications {
   String toString() => toJsonString();
 
   @override
-  bool operator ==(final Object other) =>
+  bool operator ==(Object other) =>
       other is AmphitheatreEditorModifications && crop == other.crop;
 
   @override

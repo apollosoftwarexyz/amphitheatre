@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:amphitheatre/src/amphitheatre.dart';
+import 'package:amphitheatre/src/amphitheatre_platform.dart'
+    show AmphitheatrePlatform, getAmphitheatrePlatform;
 import 'package:amphitheatre/src/editor/amphitheatre_editor.dart';
 import 'package:amphitheatre/src/utils.dart';
 import 'package:cross_file/cross_file.dart';
@@ -31,10 +33,10 @@ class AmphitheatreVideoInfo {
   List<Object?> get _nullableElements => [title, subtitle, description];
 
   /// Returns true if none of the video info elements are set.
-  bool get isEmpty => _nullableElements.every((final item) => item == null);
+  bool get isEmpty => _nullableElements.every((item) => item == null);
 
   /// Returns true if any of the video info elements are set.
-  bool get isNotEmpty => _nullableElements.any((final item) => item != null);
+  bool get isNotEmpty => _nullableElements.any((item) => item != null);
 }
 
 /// Controls the Amphitheatre video player.
@@ -115,22 +117,70 @@ class AmphitheatreController with ChangeNotifier {
   /// Returns the aspect ratio of the video.
   double get aspectRatio => controller.value.aspectRatio;
 
-  bool _initialized = false;
+  /// Whether the video cannot be played: the underlying [controller] reports
+  /// an error, or its initialization threw.
+  ///
+  /// The latter is tracked here because the video player throws from
+  /// `setMixWithOthers` and `createWithOptions` before it has registered the
+  /// error handler that feeds `value.hasError`, so those failures never reach
+  /// the value.
+  bool get hasError =>
+      controller.value.hasError || _initializationError != null;
+
+  /// The initialization started by [initialize], or null when it was never
+  /// called on this controller.
+  Completer<void>? _initialization;
+
+  /// The error with which the initialization failed, if it did.
+  Object? _initializationError;
+
+  var _disposed = false;
+
+  /// Completes once [initialize] has finished (successfully or not) and any
+  /// autoplay has been issued to the [controller]. Commands sent to the
+  /// [controller] after this future completes are therefore ordered after
+  /// the autoplay (see [AmphitheatreEditorOptions.canAutoAccept]); the play
+  /// itself is not awaited. Already complete when [initialize] was never
+  /// called on this controller (the underlying [controller] was initialized
+  /// directly).
+  Future<void> get whenInitialized =>
+      _initialization?.future ?? Future<void>.value();
 
   /// Initialize the underlying [controller].
-  void initialize({final bool autoPlay = true, final bool looping = false}) {
+  ///
+  /// A failure is reported through [hasError] (and to listeners), and is also
+  /// forwarded to [FlutterError.reportError] so that it remains visible in
+  /// logs and crash reporting.
+  void initialize({bool autoPlay = true, bool looping = false}) {
     // Ensure the controller is not re-initialized when it is already
     // initialized.
-    if (_initialized) return;
-
-    _initialized = true;
+    if (_initialization != null) return;
+    final initialization = Completer<void>();
+    _initialization = initialization;
 
     controller.addListener(_onControllerUpdate);
     unawaited(controller.setLooping(looping));
 
-    controller.initialize().then((_) {
+    unawaited(
+      controller.initialize().then((_) {
+        // The controller may have been disposed during the initialization.
+        if (_disposed) return;
         if (autoPlay) play();
-    });
+      }).catchError((Object error, StackTrace stackTrace) {
+        FlutterError.reportError(
+          FlutterErrorDetails(
+            exception: error,
+            stack: stackTrace,
+            library: 'amphitheatre',
+            context: ErrorDescription('while initializing a video'),
+          ),
+        );
+
+        if (_disposed) return;
+        _initializationError = error;
+        notifyListeners();
+      }).whenComplete(initialization.complete),
+    );
   }
 
   /// Instruct the [controller] to start playing the video.
@@ -142,15 +192,15 @@ class AmphitheatreController with ChangeNotifier {
 
   /// Instruct the [controller] to start playing the video from the start.
   void replay() => unawaited(
-        controller.seekTo(Duration.zero).then((final _) => controller.play()),
+        controller.seekTo(Duration.zero).then((_) => controller.play()),
       );
 
   /// Instruct the [controller] to seek by [delta], relative to the current
   /// position.
-  void seek(final Duration delta) => seekTo(controller.value.position + delta);
+  void seek(Duration delta) => seekTo(controller.value.position + delta);
 
   /// Instruct the [controller] to seek to the given [time].
-  void seekTo(final Duration time) => unawaited(() async {
+  void seekTo(Duration time) => unawaited(() async {
         if (controller.value.isCompleted) {
           await controller.play();
         }
@@ -161,14 +211,57 @@ class AmphitheatreController with ChangeNotifier {
   void _onControllerUpdate() => notifyListeners();
 
   /// Dispose the underlying [controller], then the [AmphitheatreController].
+  ///
+  /// The controller cannot be used (or initialized) again afterwards: the
+  /// underlying [VideoPlayerController] is disposed with it.
   @override
-  void dispose() {
-    unawaited(controller.dispose());
+  Future<void> dispose() async {
+    // Set before the await: a continuation of initialize() that lands while
+    // the underlying controller is being disposed must not play or notify.
+    _disposed = true;
+    await controller.dispose();
     super.dispose();
+  }
 
-    // As everything is now disposed, mark that the controller can be
-    // re-initialized if desired.
-    _initialized = false;
+  /// Fetch the path for the video from the underlying controller (e.g., so it
+  /// can be used by the [AmphitheatreEditor]).
+  ///
+  /// The controller must have been initialized (see [initialize]), or this
+  /// function throws an error.
+  ///
+  /// If [temporaryFileFallback] is false, this currently only supports
+  /// [DataSourceType.file]. When the fallback is true, this method calls
+  /// [getVideo] to buffer the data into a temporary file and returns the path
+  /// to the temporary file instead.
+  ///
+  /// The returned [AmphitheatreVideoPath] specifies a normalized file path with
+  /// an indication of whether the temporary fallback described above was used.
+  Future<AmphitheatreVideoPath> getVideoPath({
+    bool temporaryFileFallback = true,
+  }) async {
+    if (!controller.value.isInitialized) {
+      throw StateError('The controller has not been initialized yet.');
+    }
+
+    if (controller.dataSourceType == DataSourceType.file) {
+      return AmphitheatreVideoPath(
+        path: Uri.parse(controller.dataSource).normalizePath().path,
+        isTemporary: false,
+      );
+    }
+
+    if (!temporaryFileFallback) {
+      throw UnsupportedError('Data source does not have a natively supported path and temporaryFileFallback is false.');
+    }
+
+    final AmphitheatrePlatform platform = getAmphitheatrePlatform();
+    final String tempDir = await platform.getTemporaryDirectory();
+
+    final AmphitheatreVideo video = await getVideo();
+    final inputFile = XFile.fromData(video.data);
+    final String inputFilePath = platform.joinPath(tempDir, video.name);
+    await inputFile.saveTo(inputFilePath);
+    return AmphitheatreVideoPath(path: inputFilePath, isTemporary: true);
   }
 
   /// Fetch the data for the video from the underlying controller (e.g., so it
@@ -226,6 +319,37 @@ class AmphitheatreController with ChangeNotifier {
       data: data,
       duration: duration,
     );
+  }
+}
+
+/// A path to a video being displayed by [Amphitheatre].
+///
+/// For details, see [AmphitheatreController.getVideoPath].
+@immutable
+final class AmphitheatreVideoPath {
+  /// The path to the video file.
+  final String path;
+
+  /// If the video data had to be buffered into a temporary file (to return a
+  /// valid path), this is true. Otherwise, if the video path could be used
+  /// directly (e.g., because the video was already specified from a file path),
+  /// this is false.
+  ///
+  /// This can be used to determine whether to clean up the file after usage.
+  final bool isTemporary;
+
+  /// Construct an [AmphitheatreVideoPath].
+  const AmphitheatreVideoPath({
+    required this.path,
+    required this.isTemporary,
+  });
+
+  /// If the [AmphitheatreVideoPath] is a temporary file ([isTemporary]), this
+  /// will delete the file.
+  Future<void> deleteIfTemporary() async {
+    if (isTemporary) {
+      await getAmphitheatrePlatform().deleteFile(path);
+    }
   }
 }
 

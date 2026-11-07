@@ -7,6 +7,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/intl.dart' as intl;
 
 import 'amphitheatre_localizations_en.dart';
+import 'amphitheatre_localizations_es.dart';
 
 // ignore_for_file: type=lint
 
@@ -62,15 +63,20 @@ import 'amphitheatre_localizations_en.dart';
 /// be consistent with the languages listed in the AmphitheatreLocalizations.supportedLocales
 /// property.
 abstract class AmphitheatreLocalizations {
-  AmphitheatreLocalizations(String locale) : localeName = intl.Intl.canonicalizedLocale(locale.toString());
+  AmphitheatreLocalizations(String locale)
+    : localeName = intl.Intl.canonicalizedLocale(locale.toString());
 
   final String localeName;
 
   static AmphitheatreLocalizations? of(BuildContext context) {
-    return Localizations.of<AmphitheatreLocalizations>(context, AmphitheatreLocalizations);
+    return Localizations.of<AmphitheatreLocalizations>(
+      context,
+      AmphitheatreLocalizations,
+    );
   }
 
-  static const LocalizationsDelegate<AmphitheatreLocalizations> delegate = _AmphitheatreLocalizationsDelegate();
+  static const LocalizationsDelegate<AmphitheatreLocalizations> delegate =
+      _AmphitheatreLocalizationsDelegate();
 
   /// A list of this localizations delegate along with the default localizations
   /// delegates.
@@ -82,16 +88,19 @@ abstract class AmphitheatreLocalizations {
   /// Additional delegates can be added by appending to this list in
   /// MaterialApp. This list does not have to be used at all if a custom list
   /// of delegates is preferred or required.
-  static const List<LocalizationsDelegate<dynamic>> localizationsDelegates = <LocalizationsDelegate<dynamic>>[
-    delegate,
-    GlobalMaterialLocalizations.delegate,
-    GlobalCupertinoLocalizations.delegate,
-    GlobalWidgetsLocalizations.delegate,
-  ];
+  static const List<LocalizationsDelegate<dynamic>> localizationsDelegates =
+      <LocalizationsDelegate<dynamic>>[
+        delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+      ];
 
   /// A list of this localizations delegate's supported locales.
   static const List<Locale> supportedLocales = <Locale>[
-    Locale('en')
+    Locale('en'),
+    Locale('es'),
+    Locale('es', '419'),
   ];
 
   /// Label for the cancel button. This replaces the close button in the editor.
@@ -142,40 +151,87 @@ abstract class AmphitheatreLocalizations {
   /// **'Replay'**
   String get replay;
 
+  /// Label indicating that the video is about to start exporting.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing to export video...'**
+  String get preparingToExportVideo;
+
   /// Label indicating the progress when exporting a video with percentage progress.
   ///
   /// In en, this message translates to:
   /// **'Exporting video ({progress})...'**
   String exportingVideo(double progress);
+
+  /// An unknown error occurred.
+  ///
+  /// In en, this message translates to:
+  /// **'An unknown error occurred.'**
+  String get unknownError;
+
+  /// Label for the action, offered with an export failure message, that starts the export again.
+  ///
+  /// In en, this message translates to:
+  /// **'Try again'**
+  String get retry;
+
+  /// Shown in the player in place of the video when it failed to load.
+  ///
+  /// In en, this message translates to:
+  /// **'This video can\'t be played.'**
+  String get videoLoadFailed;
+
+  /// Shown under the editor's timeline, indicating the length of the current selection (e.g., '00:42 selected').
+  ///
+  /// In en, this message translates to:
+  /// **'{time} selected'**
+  String selectedDuration(String time);
 }
 
-class _AmphitheatreLocalizationsDelegate extends LocalizationsDelegate<AmphitheatreLocalizations> {
+class _AmphitheatreLocalizationsDelegate
+    extends LocalizationsDelegate<AmphitheatreLocalizations> {
   const _AmphitheatreLocalizationsDelegate();
 
   @override
   Future<AmphitheatreLocalizations> load(Locale locale) {
-    return SynchronousFuture<AmphitheatreLocalizations>(lookupAmphitheatreLocalizations(locale));
+    return SynchronousFuture<AmphitheatreLocalizations>(
+      lookupAmphitheatreLocalizations(locale),
+    );
   }
 
   @override
-  bool isSupported(Locale locale) => <String>['en'].contains(locale.languageCode);
+  bool isSupported(Locale locale) =>
+      <String>['en', 'es'].contains(locale.languageCode);
 
   @override
   bool shouldReload(_AmphitheatreLocalizationsDelegate old) => false;
 }
 
 AmphitheatreLocalizations lookupAmphitheatreLocalizations(Locale locale) {
-
+  // Lookup logic when language+country codes are specified.
+  switch (locale.languageCode) {
+    case 'es':
+      {
+        switch (locale.countryCode) {
+          case '419':
+            return AmphitheatreLocalizationsEs419();
+        }
+        break;
+      }
+  }
 
   // Lookup logic when only language code is specified.
   switch (locale.languageCode) {
-    case 'en': return AmphitheatreLocalizationsEn();
+    case 'en':
+      return AmphitheatreLocalizationsEn();
+    case 'es':
+      return AmphitheatreLocalizationsEs();
   }
 
   throw FlutterError(
     'AmphitheatreLocalizations.delegate failed to load unsupported locale "$locale". This is likely '
     'an issue with the localizations generation tool. Please file an issue '
     'on GitHub with a reproducible sample app and the gen-l10n configuration '
-    'that was used.'
+    'that was used.',
   );
 }

@@ -11,4 +11,3 @@ untranslated-messages-file: untranslated-messages.json
 output-localization-file: amphitheatre_localizations.dart
 output-class: AmphitheatreLocalizations
 output-dir: lib/src/l10n/
-synthetic-package: false

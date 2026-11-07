@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:amphitheatre/src/amphitheatre_components.dart';
 import 'package:amphitheatre/src/amphitheatre_controller.dart';
+import 'package:amphitheatre/src/utils.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
@@ -24,8 +25,8 @@ typedef AmphitheatreComponentBuilder = Widget Function(
 );
 
 Widget _buildCloseButton(
-  final AmphitheatreController controller,
-  final bool showControls,
+  AmphitheatreController controller,
+  bool showControls,
 ) =>
     AmphitheatreCloseButton(
       show: showControls
@@ -35,26 +36,26 @@ Widget _buildCloseButton(
     );
 
 Widget _buildReplayButton(
-  final AmphitheatreController controller,
-  final bool showControls,
+  AmphitheatreController controller,
+  bool showControls,
 ) =>
     AmphitheatreReplayButton(controller: controller);
 
 Widget _buildProgressSlider(
-  final AmphitheatreController controller,
-  final bool showControls,
+  AmphitheatreController controller,
+  bool showControls,
 ) =>
     AmphitheatreProgressSlider(controller: controller);
 
 Widget _buildVideoControls(
-  final AmphitheatreController controller,
-  final bool showControls,
+  AmphitheatreController controller,
+  bool showControls,
 ) =>
     AmphitheatreVideoControls(controller: controller);
 
 Widget _buildVideoInfo(
-  final AmphitheatreController controller,
-  final bool showControls,
+  AmphitheatreController controller,
+  bool showControls,
 ) =>
     AmphitheatreVideoInfoDisplay(controller: controller);
 
@@ -65,8 +66,8 @@ Widget _buildVideoInfo(
 /// used when an [Amphitheatre] is launched.
 typedef AmphitheatreRouteBuilder = Route<void> Function(Widget child);
 
-Route<void> _defaultAmphitheatreRouteBuilder(final Widget child) =>
-    MaterialPageRoute<void>(builder: (final _) => child);
+Route<void> _defaultAmphitheatreRouteBuilder(Widget child) =>
+    MaterialPageRoute<void>(builder: (_) => child);
 
 /// The Amphitheatre video player.
 class Amphitheatre extends StatefulWidget {
@@ -175,14 +176,14 @@ class Amphitheatre extends StatefulWidget {
   /// [AmphitheatreController]) - this function is simply a wrapper around that
   /// API.
   static void launch(
-    final BuildContext context, {
-    required final AmphitheatreController controller,
-    final AmphitheatreRouteBuilder routeBuilder =
+    BuildContext context, {
+    required AmphitheatreController controller,
+    AmphitheatreRouteBuilder routeBuilder =
         _defaultAmphitheatreRouteBuilder,
-    final bool useRootNavigator = false,
-    final bool enableToggleControls = true,
-    final bool enableReplayButton = true,
-    final bool autoPlay = true,
+    bool useRootNavigator = false,
+    bool enableToggleControls = true,
+    bool enableReplayButton = true,
+    bool autoPlay = true,
   }) {
     final Widget child = Amphitheatre.consume(
       controller: controller,
@@ -201,7 +202,7 @@ class Amphitheatre extends StatefulWidget {
   State<Amphitheatre> createState() => _AmphitheatreState();
 
   @override
-  void debugFillProperties(final DiagnosticPropertiesBuilder properties) {
+  void debugFillProperties(DiagnosticPropertiesBuilder properties) {
     super.debugFillProperties(properties);
     properties
       ..add(
@@ -258,7 +259,7 @@ class Amphitheatre extends StatefulWidget {
 }
 
 class _AmphitheatreState extends State<Amphitheatre> {
-  bool _showControls = true;
+  var _showControls = true;
 
   @override
   void initState() {
@@ -279,25 +280,35 @@ class _AmphitheatreState extends State<Amphitheatre> {
   }
 
   @override
-  void dispose() {
-    if (widget.consumedController) {
-      widget.controller.dispose();
-    } else {
-      widget.controller.removeListener(_onControllerUpdate);
-    }
+  Future<void> dispose() async {
+    widget.controller.removeListener(_onControllerUpdate);
     super.dispose();
+
+    if (widget.consumedController) {
+      await widget.controller.dispose();
+    }
   }
 
-  void _onControllerUpdate() => setState(() {});
+  void _onControllerUpdate() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
   void _toggleControls() {
     if ((widget.enableReplayButton && !widget.controller.isCompleted) &&
-        widget.enableToggleControls) {
+        widget.enableToggleControls &&
+        !widget.controller.hasError) {
       setState(() => _showControls = !_showControls);
     }
   }
 
   @override
-  Widget build(final BuildContext context) => Scaffold(
+  Widget build(BuildContext context) {
+    // A video that cannot be played shows why, in place of the black frame,
+    // with only the close button to act on.
+    final bool hasError = widget.controller.hasError;
+
+    return Scaffold(
         backgroundColor: Colors.black,
         body: Stack(
           fit: StackFit.expand,
@@ -307,20 +318,29 @@ class _AmphitheatreState extends State<Amphitheatre> {
               child: Container(
                 color: Colors.transparent,
                 child: Center(
-                  child: AspectRatio(
-                    aspectRatio: widget.controller.aspectRatio,
-                    child: AnimatedOpacity(
-                      opacity: widget.enableReplayButton &&
-                              widget.controller.isCompleted
-                          ? 0
-                          : 1,
-                      duration: widget.controller.animationDuration,
-                      curve: widget.controller.animationCurve,
-                      child: VideoPlayer(
-                        widget.controller.controller,
-                      ),
-                    ),
-                  ),
+                  child: hasError
+                      ? Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Text(
+                            getLocalizationDelegate(context).videoLoadFailed,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                        )
+                      : AspectRatio(
+                          aspectRatio: widget.controller.aspectRatio,
+                          child: AnimatedOpacity(
+                            opacity: widget.enableReplayButton &&
+                                    widget.controller.isCompleted
+                                ? 0
+                                : 1,
+                            duration: widget.controller.animationDuration,
+                            curve: widget.controller.animationCurve,
+                            child: VideoPlayer(
+                              widget.controller.controller,
+                            ),
+                          ),
+                        ),
                 ),
               ),
             ),
@@ -328,13 +348,14 @@ class _AmphitheatreState extends State<Amphitheatre> {
               top: 20,
               left: 20,
               child: SafeArea(
+                // The one way out of an unplayable video is always shown.
                 child: widget.buildCloseButton(
                   widget.controller,
-                  _showControls,
+                  _showControls || hasError,
                 ),
               ),
             ),
-            if (widget.buildDoneButton != null)
+            if (widget.buildDoneButton != null && !hasError)
               Positioned(
                 top: 20,
                 right: 20,
@@ -345,40 +366,42 @@ class _AmphitheatreState extends State<Amphitheatre> {
                   ),
                 ),
               ),
-            if (widget.enableReplayButton)
+            if (widget.enableReplayButton && !hasError)
               Center(
                 child: widget.buildReplayButton(
                   widget.controller,
                   _showControls,
                 ),
               ),
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: _controlsWrapper([
-                widget.buildProgressSlider(
-                  widget.controller,
-                  _showControls,
-                ),
-                widget.buildVideoControls(
-                  widget.controller,
-                  _showControls,
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(top: 20),
-                  child: widget.buildVideoInfo(
+            if (!hasError)
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: _controlsWrapper([
+                  widget.buildProgressSlider(
                     widget.controller,
                     _showControls,
                   ),
-                ),
-              ]),
-            ),
+                  widget.buildVideoControls(
+                    widget.controller,
+                    _showControls,
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 20),
+                    child: widget.buildVideoInfo(
+                      widget.controller,
+                      _showControls,
+                    ),
+                  ),
+                ]),
+              ),
           ],
         ),
       );
+  }
 
-  Widget _controlsWrapper(final List<Widget> controls) {
+  Widget _controlsWrapper(List<Widget> controls) {
     final bool showControls = _showControls &&
         (!widget.controller.isCompleted || !widget.enableReplayButton);
 

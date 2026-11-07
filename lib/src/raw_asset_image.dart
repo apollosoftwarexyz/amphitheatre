@@ -34,7 +34,7 @@ final class RawAssetImage {
   });
 
   @override
-  bool operator ==(final Object other) =>
+  bool operator ==(Object other) =>
       other is RawAssetImage &&
       size == other.size &&
       assetPath == other.assetPath &&
