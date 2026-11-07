@@ -355,7 +355,7 @@ class _AmphitheatreState extends State<Amphitheatre> {
                 ),
               ),
             ),
-            if (widget.buildDoneButton != null)
+            if (widget.buildDoneButton != null && !hasError)
               Positioned(
                 top: 20,
                 right: 20,

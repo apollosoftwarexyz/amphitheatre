@@ -148,13 +148,6 @@ final class AmphitheatreEditorStyle {
   /// The color to paint the [cropEndIcon].
   final Color cropEndIconColor;
 
-  /// The color of the track behind the filmstrip: visible until the
-  /// thumbnails arrive, and wherever a frame does not cover the track.
-  final Color trackColor;
-
-  /// The color drawn over the parts of the track outside the selection.
-  final Color selectionDimColor;
-
   /// Construct an [AmphitheatreEditorStyle].
   const AmphitheatreEditorStyle({
     this.borderColor = Colors.white,
@@ -176,8 +169,6 @@ final class AmphitheatreEditorStyle {
       package: 'amphitheatre',
     ),
     this.cropEndIconColor = Colors.black,
-    this.trackColor = Colors.transparent,
-    this.selectionDimColor = Colors.black54,
   });
 
   @override
@@ -189,9 +180,7 @@ final class AmphitheatreEditorStyle {
       lineColor == other.lineColor &&
       lineThickness == other.lineThickness &&
       cropColor == other.cropColor &&
-      cropHandleSize == other.cropHandleSize &&
-      trackColor == other.trackColor &&
-      selectionDimColor == other.selectionDimColor;
+      cropHandleSize == other.cropHandleSize;
 
   @override
   int get hashCode => Object.hashAll([
@@ -202,8 +191,6 @@ final class AmphitheatreEditorStyle {
         lineThickness,
         cropColor,
         cropHandleSize,
-        trackColor,
-        selectionDimColor,
       ]);
 }
 
@@ -354,6 +341,13 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
   /// for the loaded video.
   var _autoAcceptHandled = false;
 
+  /// The filmstrip thumbnails, in timeline order. They are held here rather
+  /// than in the slider because the slider is rebuilt every time the editor
+  /// returns from the progress screen, and the extraction decodes the video
+  /// again.
+  List<ui.Image> _thumbnails = const [];
+  var _thumbnailsRequested = false;
+
   /// When the video is exporting.
   bool get exporting => _exporting;
 
@@ -396,7 +390,72 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
     if (widget.consumedController) {
       unawaited(widget.controller.dispose());
     }
+    for (final ui.Image thumbnail in _thumbnails) {
+      thumbnail.dispose();
+    }
+    _thumbnails = const [];
     super.dispose();
+  }
+
+  /// Requests the filmstrip thumbnails from the platform, once per video,
+  /// with the [count] and [maxHeight] the slider derived from its first
+  /// layout. A later change of the slider's size does not request them again.
+  ///
+  /// The filmstrip is an enhancement: a video without a file path (see
+  /// [AmphitheatreController.getVideoPath]) or any platform failure simply
+  /// leaves the plain track visible.
+  Future<void> _loadThumbnails({
+    required int count,
+    required int maxHeight,
+  }) async {
+    if (_thumbnailsRequested) return;
+    _thumbnailsRequested = true;
+
+    try {
+      final AmphitheatreVideoPath videoPath = await widget.controller
+          .getVideoPath(temporaryFileFallback: false);
+
+      final List<Uint8List> encoded =
+          await getAmphitheatrePlatform().getThumbnails(
+        path: videoPath.path,
+        count: count,
+        maxHeight: maxHeight,
+      );
+
+      final List<ui.Image> thumbnails = await _decodeThumbnails(encoded);
+
+      if (mounted) {
+        setState(() => _thumbnails = thumbnails);
+      } else {
+        for (final thumbnail in thumbnails) {
+          thumbnail.dispose();
+        }
+      }
+    } catch (_) {/* ignored: the filmstrip is optional */}
+  }
+
+  /// Decodes every image in [encoded]. The images decoded so far are disposed
+  /// if a later one fails, so a failure leaks nothing.
+  static Future<List<ui.Image>> _decodeThumbnails(
+    List<Uint8List> encoded,
+  ) async {
+    final List<ui.Image> thumbnails = [];
+    try {
+      for (final bytes in encoded) {
+        final ui.Codec codec = await ui.instantiateImageCodec(bytes);
+        try {
+          thumbnails.add((await codec.getNextFrame()).image);
+        } finally {
+          codec.dispose();
+        }
+      }
+    } catch (_) {
+      for (final thumbnail in thumbnails) {
+        thumbnail.dispose();
+      }
+      rethrow;
+    }
+    return thumbnails;
   }
 
   /// Consults [AmphitheatreEditorOptions.shouldAutoAccept] once the video has
@@ -427,13 +486,13 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
       return;
     }
 
-    // The pending autoplay of the initialization must not restart the video
-    // after the pause below.
+    // Whatever the initialization still has queued for the player (an
+    // autoplay, or the slider's play on load) must land before the pause
+    // below, or it would restart the video.
     await widget.controller.whenInitialized;
     if (!mounted || !route.isCurrent) return;
 
-    // The video started playing when it loaded; nothing should be heard while
-    // the route animates away.
+    // Nothing should be heard while the route animates away.
     widget.controller.pause();
     route.navigator?.pop(videoPath.path);
   }
@@ -453,8 +512,13 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
         mounted && _exporting && _exportGeneration == generation;
 
     // Whether a newer export is running; this one must then leave the shared
-    // event channel and temporary files alone.
+    // temporary input alone.
     bool superseded() => _exporting && _exportGeneration != generation;
+
+    // A handle still held when the export starts: the slider goes away with
+    // the progress screen, so the gesture is abandoned here, while the slider
+    // is still in the tree to be rebuilt.
+    editorController.cancelCropGesture();
 
     // The player stays alive under the progress screen; it must not keep
     // playing there.
@@ -467,7 +531,8 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
     AmphitheatreVideoPath? inputFilePath;
     var inputHandedBack = false;
     try {
-      // Get the path to the video.
+      // Get the path to the video. The continuation of this await is the
+      // first place a cancel can be noticed.
       inputFilePath = await widget.controller.getVideoPath();
       if (!isCurrent()) return;
 
@@ -490,7 +555,7 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
         if (!isCurrent()) {
           // Cancelled while the session was being set up: it has only just
           // started, and nothing is listening for it.
-          _discardSession(session, cancel: !superseded());
+          _discardSession(session);
           return;
         }
 
@@ -506,7 +571,7 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
 
         if (!isCurrent()) {
           // The export concluded after the editor stopped waiting for it.
-          unawaited(getAmphitheatrePlatform().deleteFile(outputFilePath));
+          _deleteQuietly(outputFilePath);
           return;
         }
       }
@@ -528,9 +593,13 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
         print(error);
       }
 
+      // An export failure's message is the platform's fixed sentence (with
+      // the cause in the details); every other code carries a message meant
+      // for display, such as the disk-space check's.
       _showExportError(
-        message:
-            error.message ?? getLocalizationDelegate(context).unknownError,
+        message: error.code == kExportFailedErrorCode
+            ? getLocalizationDelegate(context).unknownError
+            : error.message ?? getLocalizationDelegate(context).unknownError,
       );
     } catch (error) {
       if (!isCurrent()) return;
@@ -563,26 +632,18 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
     _returnToEditor();
   }
 
-  /// Dispose of a session nobody is waiting for.
-  ///
-  /// With [cancel], subscribing to its status and cancelling the subscription
-  /// is the platform's cancel path; that is skipped when a newer export owns
-  /// the (shared) event channel, and the session simply runs to its end.
-  /// Either way an output the session still produces is deleted.
-  static void _discardSession(
-    AmphitheatreCropVideoSession session, {
-    required bool cancel,
-  }) {
-    unawaited(
-      session.future.then(
-        (path) => getAmphitheatrePlatform().deleteFile(path),
-        onError: (_) {},
-      ),
-    );
+  /// Delete the file at [path], ignoring a failure: the platform may already
+  /// have removed it (a cancelled session deletes its own output).
+  static void _deleteQuietly(String path) => unawaited(
+        getAmphitheatrePlatform().deleteFile(path).catchError((_) {}),
+      );
 
-    if (cancel) {
-      unawaited(session.status.listen(null).cancel());
-    }
+  /// Dispose of a session nobody is waiting for: it is cancelled, and an
+  /// output it still produces (the cancel arriving after the session
+  /// concluded) is deleted.
+  static void _discardSession(AmphitheatreCropVideoSession session) {
+    unawaited(session.future.then(_deleteQuietly).catchError((_) {}));
+    unawaited(session.cancel().catchError((_) {}));
   }
 
   /// Return the editor to its interactive state, abandoning any export: the
@@ -651,6 +712,10 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
           editorController: editorController,
           options: widget.options,
           style: widget.style,
+          thumbnails: _thumbnails,
+          onThumbnailsNeeded: (count, maxHeight) => unawaited(
+            _loadThumbnails(count: count, maxHeight: maxHeight),
+          ),
         ),
       ),
     );
@@ -850,13 +915,18 @@ final class _SliderMetrics {
       (((dx - inset) / (size.width - inset * 2)) * max).floor();
 
   /// The time delta (milliseconds) for a horizontal drag distance, for moving
-  /// a crop handle.
-  int deltaValueFor(double dxDelta) => ((dxDelta /
-              (size.width -
-                  (style.cropHandleSize * 2 + style.borderThickness * 3))) *
-          max)
-      .floor();
+  /// a crop handle. The same scale as [valueFor].
+  int deltaValueFor(double dxDelta) =>
+      ((dxDelta / (size.width - inset * 2)) * max).floor();
 }
+
+/// Invoked by an [AmphitheatreEditorSlider] once it knows the size of its
+/// track, with the number of filmstrip thumbnails that fit across it and the
+/// height (in physical pixels) to extract them at.
+typedef AmphitheatreThumbnailsCallback = void Function(
+  int count,
+  int maxHeight,
+);
 
 /// The [AmphitheatreEditorSlider] replaces the existing editor slider with
 /// a [CustomPainter]-based slider that paints a filmstrip of the video, the
@@ -879,6 +949,16 @@ class AmphitheatreEditorSlider extends StatefulWidget {
   /// The height of the slider.
   final double height;
 
+  /// The filmstrip thumbnails to paint across the track, in timeline order.
+  /// The slider does not own them; the owner disposes them. Empty leaves the
+  /// plain track visible.
+  final List<ui.Image> thumbnails;
+
+  /// Invoked once, with the first finite, non-empty track size laid out after
+  /// the video initialised, so that the owner can extract [thumbnails] to
+  /// fit. A later change of size does not invoke it again.
+  final AmphitheatreThumbnailsCallback? onThumbnailsNeeded;
+
   /// Construct the [AmphitheatreEditorSlider].
   const AmphitheatreEditorSlider({
     required this.controller,
@@ -886,6 +966,8 @@ class AmphitheatreEditorSlider extends StatefulWidget {
     required this.options,
     required this.style,
     this.height = 72,
+    this.thumbnails = const [],
+    this.onThumbnailsNeeded,
     super.key,
   });
 
@@ -908,7 +990,14 @@ class AmphitheatreEditorSlider extends StatefulWidget {
       )
       ..add(DiagnosticsProperty<AmphitheatreEditorOptions>('options', options))
       ..add(DiagnosticsProperty<AmphitheatreEditorStyle>('style', style))
-      ..add(DoubleProperty('height', height));
+      ..add(DoubleProperty('height', height))
+      ..add(IntProperty('thumbnails', thumbnails.length))
+      ..add(
+        ObjectFlagProperty<AmphitheatreThumbnailsCallback>.has(
+          'onThumbnailsNeeded',
+          onThumbnailsNeeded,
+        ),
+      );
   }
 }
 
@@ -919,8 +1008,6 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
   /// The cached end (RHS) crop icon.
   ui.Image? _cropEndIcon;
 
-  /// The filmstrip thumbnails, in timeline order.
-  List<ui.Image> _thumbnails = const [];
   var _thumbnailsRequested = false;
 
   /// The [_AmphitheatreEditorSliderDragMode] of the current 'drag session'.
@@ -961,25 +1048,30 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
       widget.controller.addListener(_didControllerUpdate);
     } else {
       widget.controller.addListener(_didVideoLoad);
+
+      if (widget.controller.isInitialized) {
+        // Loaded before the slider existed, and quiet: nothing would notify
+        // the listener, so the default crop is applied once the first frame
+        // is in (a notification during the build is not allowed).
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _didVideoLoad();
+        });
+      }
     }
   }
 
   @override
   void dispose() {
-    // A gesture interrupted by the slider going away is abandoned; the
-    // slider's own listener is gone first, so the restore does not rebuild it.
+    // A gesture interrupted by the slider going away is the owner's to
+    // abandon (see AmphitheatreEditorState.produceOutputVideo): a restore
+    // from here would notify a tree that is being torn down.
     widget.editorController.removeListener(_didEditVideo);
-    _cancelInteraction();
     widget.controller.removeListener(_didControllerUpdate);
     widget.controller.removeListener(_didVideoLoad);
     _cropStartIcon?.dispose();
     _cropEndIcon?.dispose();
     _cropStartIcon = null;
     _cropEndIcon = null;
-    for (final ui.Image thumbnail in _thumbnails) {
-      thumbnail.dispose();
-    }
-    _thumbnails = const [];
     super.dispose();
   }
 
@@ -1115,15 +1207,12 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
     if (mounted) setState(() {});
   }
 
-  /// Requests the filmstrip thumbnails from the platform, once, sized for the
-  /// first finite, non-empty track [size] laid out after the video
-  /// initialised. A later change of size does not request them again.
-  ///
-  /// The filmstrip is an enhancement: a video without a file path (see
-  /// [AmphitheatreController.getVideoPath]) or any platform failure simply
-  /// leaves the plain track visible.
-  Future<void> _maybeLoadThumbnails(Size size) async {
+  /// Asks the owner for filmstrip thumbnails, once, sized for the first
+  /// finite, non-empty track [size] laid out after the video initialised (see
+  /// [AmphitheatreEditorSlider.onThumbnailsNeeded]).
+  void _maybeRequestThumbnails(Size size) {
     if (_thumbnailsRequested ||
+        widget.onThumbnailsNeeded == null ||
         !widget.controller.isInitialized ||
         widget.controller.duration <= Duration.zero ||
         !size.isFinite ||
@@ -1132,62 +1221,19 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
     }
     _thumbnailsRequested = true;
 
-    try {
-      final double aspectRatio = widget.controller.aspectRatio.isFinite &&
-              widget.controller.aspectRatio > 0
-          ? widget.controller.aspectRatio.clamp(0.4, 2.4)
-          : 1.0;
+    final double aspectRatio = widget.controller.aspectRatio.isFinite &&
+            widget.controller.aspectRatio > 0
+        ? widget.controller.aspectRatio.clamp(0.4, 2.4)
+        : 1.0;
 
-      final int count =
-          (size.width / (size.height * aspectRatio)).ceil().clamp(3, 24);
-      final double devicePixelRatio =
-          mounted ? MediaQuery.devicePixelRatioOf(context) : 1.0;
-      final int maxHeight =
-          (size.height * devicePixelRatio).round().clamp(32, 320);
+    final int count =
+        (size.width / (size.height * aspectRatio)).ceil().clamp(3, 24);
+    final int maxHeight =
+        (size.height * MediaQuery.devicePixelRatioOf(context))
+            .round()
+            .clamp(32, 320);
 
-      final AmphitheatreVideoPath videoPath = await widget.controller
-          .getVideoPath(temporaryFileFallback: false);
-      final List<Uint8List> encoded =
-          await getAmphitheatrePlatform().getThumbnails(
-        path: videoPath.path,
-        count: count,
-        maxHeight: maxHeight,
-      );
-
-      final List<ui.Image> thumbnails = await _decodeThumbnails(encoded);
-
-      if (mounted) {
-        setState(() => _thumbnails = thumbnails);
-      } else {
-        for (final thumbnail in thumbnails) {
-          thumbnail.dispose();
-        }
-      }
-    } catch (_) {/* ignored: the filmstrip is optional */}
-  }
-
-  /// Decodes every image in [encoded]. The images decoded so far are disposed
-  /// if a later one fails, so a failure leaks nothing.
-  static Future<List<ui.Image>> _decodeThumbnails(
-    List<Uint8List> encoded,
-  ) async {
-    final List<ui.Image> thumbnails = [];
-    try {
-      for (final bytes in encoded) {
-        final ui.Codec codec = await ui.instantiateImageCodec(bytes);
-        try {
-          thumbnails.add((await codec.getNextFrame()).image);
-        } finally {
-          codec.dispose();
-        }
-      }
-    } catch (_) {
-      for (final thumbnail in thumbnails) {
-        thumbnail.dispose();
-      }
-      rethrow;
-    }
-    return thumbnails;
+    widget.onThumbnailsNeeded!(count, maxHeight);
   }
 
   int get _max => widget.controller.duration.inMilliseconds;
@@ -1459,19 +1505,40 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
         left: widget.style.cropHandleSize,
         right: widget.style.cropHandleSize,
       ),
+      // Each cell gives way rather than overflow the row at a large text
+      // scale or with the hours format.
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(crop.start.format(hours: hours), style: _timestampStyle),
-          Text(
-            getLocalizationDelegate(context)
-                .selectedDuration((crop.end - crop.start).format()),
-            style: _timestampStyle.copyWith(
-              color: Colors.white,
-              fontWeight: FontWeight.w600,
+          Expanded(
+            child: Text(
+              crop.start.format(hours: hours),
+              style: _timestampStyle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
-          Text(crop.end.format(hours: hours), style: _timestampStyle),
+          Expanded(
+            child: Text(
+              getLocalizationDelegate(context)
+                  .selectedDuration((crop.end - crop.start).format()),
+              style: _timestampStyle.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          Expanded(
+            child: Text(
+              crop.end.format(hours: hours),
+              style: _timestampStyle,
+              textAlign: TextAlign.end,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
         ],
       ),
     );
@@ -1490,7 +1557,7 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
                   final size =
                       Size(constraints.maxWidth, constraints.maxHeight);
 
-                  unawaited(_maybeLoadThumbnails(size));
+                  _maybeRequestThumbnails(size);
 
                   return Listener(
                     // Seen before the recognizers see the event, so a drag
@@ -1535,7 +1602,7 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
                           style: widget.style,
                           value: widget.controller.position.inMilliseconds,
                           max: _max,
-                          thumbnails: _thumbnails,
+                          thumbnails: widget.thumbnails,
                         ),
                         foregroundPainter:
                             (widget.editorController.value.crop != null)
@@ -1581,6 +1648,10 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
 /// playback head and the border. The crop selection is painted on top by
 /// [_AmphitheatreEditorSliderCropPainter].
 class _AmphitheatreEditorSliderPainter extends CustomPainter {
+  /// The color of the track behind the filmstrip: visible until the
+  /// thumbnails arrive, and wherever a frame does not cover the track.
+  static const _trackColor = Colors.transparent;
+
   final int value;
   final int max;
   final AmphitheatreEditorStyle style;
@@ -1616,7 +1687,7 @@ class _AmphitheatreEditorSliderPainter extends CustomPainter {
     canvas
       ..save()
       ..clipRRect(borderRRect)
-      ..drawRect(metrics.trackRect, Paint()..color = style.trackColor);
+      ..drawRect(metrics.trackRect, Paint()..color = _trackColor);
 
     _paintFilmstrip(canvas, metrics);
 
@@ -1684,6 +1755,9 @@ class _AmphitheatreEditorSliderPainter extends CustomPainter {
 }
 
 class _AmphitheatreEditorSliderCropPainter extends CustomPainter {
+  /// The color drawn over the parts of the track outside the selection.
+  static const _selectionDimColor = Colors.black54;
+
   final Size size;
   final AmphitheatreEditorStyle style;
 
@@ -1837,7 +1911,7 @@ class _AmphitheatreEditorSliderCropPainter extends CustomPainter {
           (endPosition - startPosition) + (style.lineThickness / 2);
 
       // Dim the parts of the timeline outside of the selection.
-      final scrimPaint = Paint()..color = style.selectionDimColor;
+      final scrimPaint = Paint()..color = _selectionDimColor;
       canvas
         ..save()
         ..clipRRect(metrics.trackRRect)

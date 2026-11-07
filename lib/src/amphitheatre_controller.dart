@@ -131,15 +131,21 @@ class AmphitheatreController with ChangeNotifier {
   var _disposed = false;
   Completer<void>? _initialization;
 
-  /// Completes once [initialize] has finished, autoplay included, so that a
-  /// caller who needs the player quiet afterwards (see
-  /// [AmphitheatreEditorOptions.canAutoAccept]) does not race the pending
-  /// play. Already complete when [initialize] was never called on this
-  /// controller (the underlying [controller] was initialized directly).
+  /// Completes once [initialize] has finished (successfully or not) and any
+  /// autoplay has been issued to the [controller]. Commands sent to the
+  /// [controller] after this future completes are therefore ordered after
+  /// the autoplay (see [AmphitheatreEditorOptions.canAutoAccept]); the play
+  /// itself is not awaited. Already complete when [initialize] was never
+  /// called on this controller (the underlying [controller] was initialized
+  /// directly).
   Future<void> get whenInitialized =>
       _initialization?.future ?? Future<void>.value();
 
   /// Initialize the underlying [controller].
+  ///
+  /// A failure is reported through [hasError] (and to listeners), and is also
+  /// forwarded to [FlutterError.reportError] so that it remains visible in
+  /// logs and crash reporting.
   void initialize({bool autoPlay = true, bool looping = false}) {
     // Ensure the controller is not re-initialized when it is already
     // initialized.
@@ -157,7 +163,16 @@ class AmphitheatreController with ChangeNotifier {
         // The controller may have been disposed during the initialization.
         if (_disposed) return;
         if (autoPlay) play();
-      }).catchError((Object error) {
+      }).catchError((Object error, StackTrace stackTrace) {
+        FlutterError.reportError(
+          FlutterErrorDetails(
+            exception: error,
+            stack: stackTrace,
+            library: 'amphitheatre',
+            context: ErrorDescription('while initializing a video'),
+          ),
+        );
+
         if (_disposed) return;
         _initializationFailed = true;
         notifyListeners();
@@ -193,6 +208,9 @@ class AmphitheatreController with ChangeNotifier {
   void _onControllerUpdate() => notifyListeners();
 
   /// Dispose the underlying [controller], then the [AmphitheatreController].
+  ///
+  /// The controller cannot be used (or initialized) again afterwards: the
+  /// underlying [VideoPlayerController] is disposed with it.
   @override
   Future<void> dispose() async {
     // Set before the await: a continuation of initialize() that lands while
@@ -200,11 +218,6 @@ class AmphitheatreController with ChangeNotifier {
     _disposed = true;
     await controller.dispose();
     super.dispose();
-
-    // As everything is now disposed, mark that the controller can be
-    // re-initialized if desired.
-    _initialized = false;
-    _initializationFailed = false;
   }
 
   /// Fetch the path for the video from the underlying controller (e.g., so it

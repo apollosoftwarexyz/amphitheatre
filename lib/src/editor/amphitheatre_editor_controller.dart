@@ -235,7 +235,10 @@ final class AmphitheatreEditorController with ChangeNotifier {
   /// 
   /// Unlike [clearHistory], this clears the history and all modifications to
   /// the video.
+  ///
+  /// A crop gesture in progress is ended first (see [endCropGesture]).
   void reset() {
+    endCropGesture();
     _value = const AmphitheatreEditorModifications.empty();
     clearHistory();
   }

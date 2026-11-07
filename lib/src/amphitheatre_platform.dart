@@ -12,11 +12,17 @@ import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 ///
 /// The error message accompanying this code is human-readable and suitable
 /// for display.
-const String kExceedsDiskSpaceErrorCode = 'EXCEEDS_DISK_SPACE';
+const kExceedsDiskSpaceErrorCode = 'EXCEEDS_DISK_SPACE';
 
 /// The error code with which [AmphitheatreCropVideoSession.future] fails when
 /// the crop operation was cancelled (see [AmphitheatreCropVideoSession]).
 const kExportCancelledErrorCode = 'EXPORT_CANCELLED';
+
+/// The error code with which [AmphitheatreCropVideoSession.future] fails when
+/// the platform's export failed. The message is a fixed sentence; the
+/// platform's own error text (and, on Android, media3's error code) is in the
+/// details.
+const kExportFailedErrorCode = 'EXPORT_FAILED';
 
 /// Set the platform interface implementation for [Amphitheatre] and
 /// [AmphitheatreEditor].
@@ -214,7 +220,7 @@ abstract class AmphitheatrePlatform extends PlatformInterface {
   /// start of the original video and similarly end at [end] milliseconds.
   ///
   /// The output video quality is set to the given [quality]. If the quality is
-  /// not specified, a platform-specific optimal value will be chosen.
+  /// not specified, [AmphitheatreCropVideoQuality.passthrough] is used.
   ///
   /// The [diskSpacePolicy] specifies whether to check for and, how to deal with
   /// a lack of, available disk space.
@@ -260,7 +266,8 @@ abstract class AmphitheatrePlatform extends PlatformInterface {
 /// cancel the crop operation (if it is still running, causing [future] to
 /// complete with an error) and discard the session. This avoids dangling
 /// background work when the consumer of a session goes away, so the stream
-/// should remain subscribed for as long as the result is wanted.
+/// should remain subscribed for as long as the result is wanted. A session
+/// that was never subscribed to can be cancelled with [cancel].
 abstract class AmphitheatreCropVideoSession {
   /// Get the unique session ID for this crop operation.
   String get id;
@@ -278,6 +285,15 @@ abstract class AmphitheatreCropVideoSession {
   /// by the [AmphitheatrePlatform] with the current snapshot of the operation
   /// status.
   Stream<AmphitheatreCropVideoStatus> get status;
+
+  /// Cancel the crop operation if it is still running: its output is deleted
+  /// and [future] fails with [kExportCancelledErrorCode]. Does nothing once
+  /// the operation has concluded.
+  ///
+  /// The default implementation throws [UnimplementedError], so external
+  /// implementations keep compiling.
+  Future<void> cancel() =>
+      throw UnimplementedError('cancel has not been implemented.');
 }
 
 /// The default implementation of [AmphitheatrePlatform], using Flutter's
@@ -390,10 +406,11 @@ final class AmphitheatrePlatformMethodChannel extends AmphitheatrePlatform {
   }
 }
 
-class _MethodChannelCropVideoSession implements AmphitheatreCropVideoSession {
+class _MethodChannelCropVideoSession extends AmphitheatreCropVideoSession {
   @override
   final String id;
 
+  final MethodChannel _channel;
   final Future<String> _future;
   final Stream<AmphitheatreCropVideoStatus> _events;
 
@@ -401,7 +418,8 @@ class _MethodChannelCropVideoSession implements AmphitheatreCropVideoSession {
     required this.id,
     required MethodChannel channel,
     required EventChannel eventChannel,
-  })  : _future = channel.invokeMethod<String>('awaitCropVideo', {
+  })  : _channel = channel,
+        _future = channel.invokeMethod<String>('awaitCropVideo', {
           'sessionId': id,
         }).then<String>((output) => output!)
           ..ignore(),
@@ -424,6 +442,10 @@ class _MethodChannelCropVideoSession implements AmphitheatreCropVideoSession {
 
   @override
   Stream<AmphitheatreCropVideoStatus> get status => _events;
+
+  @override
+  Future<void> cancel() =>
+      _channel.invokeMethod('cancelCropVideo', {'sessionId': id});
 }
 
 class _MethodChannelCropVideoStatus implements AmphitheatreCropVideoStatus {
