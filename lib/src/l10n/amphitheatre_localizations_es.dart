@@ -54,6 +54,9 @@ class AmphitheatreLocalizationsEs extends AmphitheatreLocalizations {
   String get unknownError => 'Se ha producido un error desconocido.';
 
   @override
+  String get retry => 'Reintentar';
+
+  @override
   String selectedDuration(String time) {
     return '$time seleccionados';
   }
@@ -104,6 +107,9 @@ class AmphitheatreLocalizationsEs419 extends AmphitheatreLocalizationsEs {
 
   @override
   String get unknownError => 'Ocurrió un error desconocido.';
+
+  @override
+  String get retry => 'Reintentar';
 
   @override
   String selectedDuration(String time) {

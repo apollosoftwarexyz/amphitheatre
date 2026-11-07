@@ -14,6 +14,10 @@ import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 /// for display.
 const String kExceedsDiskSpaceErrorCode = 'EXCEEDS_DISK_SPACE';
 
+/// The error code with which [AmphitheatreCropVideoSession.future] fails when
+/// the crop operation was cancelled (see [AmphitheatreCropVideoSession]).
+const kExportCancelledErrorCode = 'EXPORT_CANCELLED';
+
 /// Set the platform interface implementation for [Amphitheatre] and
 /// [AmphitheatreEditor].
 ///

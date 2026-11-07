@@ -11,5 +11,6 @@
   "preparingToExportVideo": "Preparando la exportación del video...",
   "exportingVideo": "Exportando el video ({progress})...",
   "unknownError": "Se ha producido un error desconocido.",
+  "retry": "Reintentar",
   "selectedDuration": "{time} seleccionados"
 }

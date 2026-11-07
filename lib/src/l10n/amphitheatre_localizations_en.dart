@@ -54,6 +54,9 @@ class AmphitheatreLocalizationsEn extends AmphitheatreLocalizations {
   String get unknownError => 'An unknown error occurred.';
 
   @override
+  String get retry => 'Try again';
+
+  @override
   String selectedDuration(String time) {
     return '$time selected';
   }

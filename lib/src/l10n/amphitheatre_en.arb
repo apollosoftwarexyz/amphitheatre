@@ -53,6 +53,10 @@
     "@unknownError": {
         "description": "An unknown error occurred."
     },
+    "retry": "Try again",
+    "@retry": {
+        "description": "Label for the action, offered with an export failure message, that starts the export again."
+    },
     "selectedDuration": "{time} selected",
     "@selectedDuration": {
         "description": "Shown under the editor's timeline, indicating the length of the current selection (e.g., '00:42 selected').",

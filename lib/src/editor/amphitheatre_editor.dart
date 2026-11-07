@@ -226,8 +226,12 @@ Widget _buildVideoControls(
 /// If the progress is null, the exporter progress indicator should be
 /// indeterminate. Otherwise, the progress contains the latest progress reported
 /// by the [AmphitheatrePlatform].
+///
+/// [onCancel], when not null, cancels the export and returns to the editor; the
+/// screen should offer it to the user.
 typedef AmphitheatreExporterProgressBuilder = Widget Function({
   required double? progress,
+  VoidCallback? onCancel,
 });
 
 /// The Amphitheatre video editor.
@@ -336,6 +340,11 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
   var _exporting = false;
   StreamSubscription<AmphitheatreCropVideoStatus>? _exportStatusStream;
 
+  /// Counts the exports started, so that the continuation of an export that
+  /// was cancelled (or whose editor went away) while it awaited the video path
+  /// or the session can tell that it is no longer wanted.
+  var _exportGeneration = 0;
+
   double? _progress;
 
   /// When the video is exporting.
@@ -347,9 +356,6 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
   /// this is null.
   double? get progress => _progress;
 
-  late final _amphitheatre =
-      widget.consumedController ? Amphitheatre.consume : Amphitheatre.new;
-
   /// The editor state controller.
   final editorController =
       AmphitheatreEditorController();
@@ -358,12 +364,23 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
   void initState() {
     editorController.addListener(() => setState(() {}));
     super.initState();
+
+    // The editor owns a consumed controller for its whole life, rather than
+    // the player it builds: the player is swapped out for the progress screen
+    // during an export, and a failed or cancelled export returns to it.
+    if (widget.consumedController) {
+      widget.controller.initialize(autoPlay: false);
+    }
   }
 
   @override
   void dispose() {
+    _exportGeneration++;
     unawaited(_exportStatusStream?.cancel());
     editorController.dispose();
+    if (widget.consumedController) {
+      unawaited(widget.controller.dispose());
+    }
     super.dispose();
   }
 
@@ -375,22 +392,38 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
 
   /// Render the modified video.
   Future<void> produceOutputVideo() async {
-    if (_exporting) return;
+    // A "try again" from the SnackBar can outlive the editor.
+    if (_exporting || !mounted) return;
+    final int generation = ++_exportGeneration;
+    bool isCurrent() =>
+        mounted && _exporting && _exportGeneration == generation;
+
+    // Whether a newer export is running; this one must then leave the shared
+    // event channel and temporary files alone.
+    bool superseded() => _exporting && _exportGeneration != generation;
+
+    // The player stays alive under the progress screen; it must not keep
+    // playing there.
+    widget.controller.pause();
     setState(() {
       _exporting = true;
+      _progress = null;
     });
 
-    // Get the path to the video.
-    final AmphitheatreVideoPath inputFilePath =
-        await widget.controller.getVideoPath();
+    AmphitheatreVideoPath? inputFilePath;
+    var inputHandedBack = false;
+    try {
+      // Get the path to the video.
+      inputFilePath = await widget.controller.getVideoPath();
+      if (!isCurrent()) return;
 
-    // Now step through each of the modifications (currently, just a crop).
-    final AmphitheatreEditorActionCrop? crop = editorController.value.crop;
-    String outputFilePath = inputFilePath.path;
+      // Now step through each of the modifications (currently, just a crop).
+      final AmphitheatreEditorActionCrop? crop = editorController.value.crop;
+      String outputFilePath = inputFilePath.path;
 
-    if (crop != null &&
-        (crop.start > Duration.zero || crop.end < widget.controller.duration)) {
-      try {
+      if (crop != null &&
+          (crop.start > Duration.zero ||
+              crop.end < widget.controller.duration)) {
         final AmphitheatreCropVideoSession session =
             await getAmphitheatrePlatform().cropVideo(
           path: inputFilePath.path,
@@ -399,6 +432,13 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
           diskSpacePolicy: widget.options.diskSpacePolicy,
           onExceedsDiskSpace: widget.options.onExceedsDiskSpace,
         );
+
+        if (!isCurrent()) {
+          // Cancelled while the session was being set up: it has only just
+          // started, and nothing is listening for it.
+          _discardSession(session, cancel: !superseded());
+          return;
+        }
 
         _exportStatusStream = session.status.listen((status) {
           if (mounted) {
@@ -409,42 +449,93 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
         });
 
         outputFilePath = await session.future;
-      } on PlatformException catch (error) {
-        if (kDebugMode) {
-          print(error);
-        }
 
-        _showExportError(
-          message:
-              error.message ?? getLocalizationDelegate(context).unknownError,
-        );
-        return;
-      } catch (error) {
-        if (kDebugMode) {
-          print(error);
+        if (!isCurrent()) {
+          // The export concluded after the editor stopped waiting for it.
+          unawaited(getAmphitheatrePlatform().deleteFile(outputFilePath));
+          return;
         }
+      }
 
-        _showExportError(
-          message: getLocalizationDelegate(context).unknownError,
-        );
+      // A full-length selection hands the input itself back.
+      inputHandedBack = outputFilePath == inputFilePath.path;
+      Navigator.of(context).pop(outputFilePath);
+    } on PlatformException catch (error) {
+      if (!isCurrent()) return;
+
+      if (error.code == kExportCancelledErrorCode) {
+        // Cancelled by the platform (rather than through cancelExport, which
+        // has already returned to the editor): no error to show.
+        _returnToEditor();
         return;
-      } finally {
+      }
+
+      if (kDebugMode) {
+        print(error);
+      }
+
+      _showExportError(
+        message:
+            error.message ?? getLocalizationDelegate(context).unknownError,
+      );
+    } catch (error) {
+      if (!isCurrent()) return;
+
+      if (kDebugMode) {
+        print(error);
+      }
+
+      _showExportError(
+        message: getLocalizationDelegate(context).unknownError,
+      );
+    } finally {
+      // A newer export resolves the same temporary path for the same video
+      // and deletes it when it is done.
+      if (!inputHandedBack && !superseded()) {
         try {
-          await inputFilePath.deleteIfTemporary();
+          await inputFilePath?.deleteIfTemporary();
         } catch (_) {}
       }
     }
+  }
 
-    if (mounted) {
-      Navigator.of(context).pop(outputFilePath);
+  /// Cancel the export in progress and return to the editor.
+  ///
+  /// A running session is cancelled through its status subscription (the
+  /// platform's cancel path); an export still preparing stands down once its
+  /// current await returns.
+  void cancelExport() {
+    if (!_exporting) return;
+    _returnToEditor();
+  }
+
+  /// Dispose of a session nobody is waiting for.
+  ///
+  /// With [cancel], subscribing to its status and cancelling the subscription
+  /// is the platform's cancel path; that is skipped when a newer export owns
+  /// the (shared) event channel, and the session simply runs to its end.
+  /// Either way an output the session still produces is deleted.
+  static void _discardSession(
+    AmphitheatreCropVideoSession session, {
+    required bool cancel,
+  }) {
+    unawaited(
+      session.future.then(
+        (path) => getAmphitheatrePlatform().deleteFile(path),
+        onError: (_) {},
+      ),
+    );
+
+    if (cancel) {
+      unawaited(session.status.listen(null).cancel());
     }
   }
 
-  /// Display the error [message] raised whilst producing the output video and
-  /// return the editor to its interactive state.
-  void _showExportError({required String message}) {
-    // Cancelling the status subscription also instructs the platform to clean
-    // up the failed session.
+  /// Return the editor to its interactive state, abandoning any export: the
+  /// status subscription is cancelled (which cancels the platform session) and
+  /// the export's continuation is told to stand down.
+  void _returnToEditor() {
+    _exportGeneration++;
     unawaited(_exportStatusStream?.cancel());
     _exportStatusStream = null;
 
@@ -454,18 +545,38 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
       _exporting = false;
       _progress = null;
     });
+  }
 
-    ScaffoldMessenger.maybeOf(context)
-        ?.showSnackBar(SnackBar(content: Text(message)));
+  /// Display the error [message] raised whilst producing the output video and
+  /// return the editor to its interactive state, offering to try again.
+  void _showExportError({required String message}) {
+    _returnToEditor();
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        action: SnackBarAction(
+          label: getLocalizationDelegate(context).retry,
+          onPressed: () => unawaited(produceOutputVideo()),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     if (_exporting) {
-      return widget.buildExporterProgress(progress: progress);
+      return widget.buildExporterProgress(
+        progress: progress,
+        onCancel: cancelExport,
+      );
     }
 
-    return _amphitheatre(
+    // Never a consuming player: the controller outlives this widget (see
+    // initState).
+    return Amphitheatre(
       controller: widget.controller,
       enableToggleControls: false,
       enableReplayButton: false,
@@ -507,23 +618,36 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
   }
 }
 
-Widget _buildAmphitheatreExporterProgress({required double? progress}) =>
-    AmphitheatreExporterProgress(progress: progress);
+Widget _buildAmphitheatreExporterProgress({
+  required double? progress,
+  VoidCallback? onCancel,
+}) =>
+    AmphitheatreExporterProgress(progress: progress, onCancel: onCancel);
 
 /// The default exporter progress screen for the [AmphitheatreEditor].
 class AmphitheatreExporterProgress extends StatelessWidget {
   /// The progress of the export job.
   final double? progress;
 
+  /// Cancels the export. When null, the export cannot be cancelled from this
+  /// screen and no cancel button is shown.
+  final VoidCallback? onCancel;
+
   /// Construct the [AmphitheatreExporterProgress] screen.
   const AmphitheatreExporterProgress({
     required this.progress,
+    this.onCancel,
     super.key,
   });
 
   @override
   Widget build(BuildContext context) => PopScope(
         canPop: false,
+        // The system back gesture cancels the export rather than leaving the
+        // screen underneath it.
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) onCancel?.call();
+        },
         child: Scaffold(
           body: AnnotatedRegion<SystemUiOverlayStyle>(
             value: _getSystemUiOverlayStyle(Theme.of(context)),
@@ -551,6 +675,13 @@ class AmphitheatreExporterProgress extends StatelessWidget {
                       borderRadius: BorderRadius.circular(100),
                     ),
                   ),
+                  if (onCancel != null) ...[
+                    const SizedBox(height: 20),
+                    TextButton(
+                      onPressed: onCancel,
+                      child: Text(getLocalizationDelegate(context).cancel),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -586,7 +717,9 @@ class AmphitheatreExporterProgress extends StatelessWidget {
   @override
   void debugFillProperties(DiagnosticPropertiesBuilder properties) {
     super.debugFillProperties(properties);
-    properties.add(DoubleProperty('progress', progress));
+    properties
+      ..add(DoubleProperty('progress', progress))
+      ..add(ObjectFlagProperty<VoidCallback>.has('onCancel', onCancel));
   }
 }
 
@@ -766,8 +899,15 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
     super.initState();
     unawaited(_loadImages());
 
-    widget.controller.addListener(_didVideoLoad);
     widget.editorController.addListener(_didEditVideo);
+
+    if (widget.controller.isInitialized &&
+        widget.editorController.value.crop != null) {
+      // Loaded and cropped already: the editor is back from an export.
+      widget.controller.addListener(_didControllerUpdate);
+    } else {
+      widget.controller.addListener(_didVideoLoad);
+    }
   }
 
   @override

@@ -169,6 +169,12 @@ abstract class AmphitheatreLocalizations {
   /// **'An unknown error occurred.'**
   String get unknownError;
 
+  /// Label for the action, offered with an export failure message, that starts the export again.
+  ///
+  /// In en, this message translates to:
+  /// **'Try again'**
+  String get retry;
+
   /// Shown under the editor's timeline, indicating the length of the current selection (e.g., '00:42 selected').
   ///
   /// In en, this message translates to:
