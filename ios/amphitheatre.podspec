@@ -28,9 +28,10 @@ If full Darwin (i.e., macOS) support is added, it will be added here too.
   }
   s.swift_version = '5.0'
 
-  # If your plugin requires a privacy manifest, for example if it uses any
-  # required reason APIs, update the PrivacyInfo.xcprivacy file to describe your
-  # plugin's privacy impact, and then uncomment this line. For more information,
-  # see https://developer.apple.com/documentation/bundleresources/privacy_manifest_files
-  # s.resource_bundles = {'amphitheatre_privacy' => ['Resources/PrivacyInfo.xcprivacy']}
+  # The privacy manifest declares the one required-reason API the plugin uses:
+  # the available disk space (NSPrivacyAccessedAPICategoryDiskSpace, E174.1),
+  # read before an export to check that the output will fit. For more
+  # information, see
+  # https://developer.apple.com/documentation/bundleresources/privacy_manifest_files
+  s.resource_bundles = {'amphitheatre_privacy' => ['amphitheatre/Sources/amphitheatre/PrivacyInfo.xcprivacy']}
 end
