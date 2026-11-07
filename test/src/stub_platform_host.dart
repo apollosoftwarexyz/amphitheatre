@@ -79,14 +79,25 @@ final class StubAmphitheatrePlatform {
   bool valid = true;
 
   /// The thumbnails answered by `getThumbnails`, as the host encodes them:
-  /// byte lists, or anything else to exercise the Dart side's filtering.
-  List<Object?> thumbnails = const [];
+  /// byte lists, or anything else to exercise the Dart side's filtering. Null
+  /// is a host that answers nothing.
+  List<Object?>? thumbnails = const [];
+
+  /// When set, `getThumbnails` fails with this instead of answering.
+  PlatformException? thumbnailsError;
 
   /// The arguments received by the event channel's `onListen`, in order.
   final List<Object?> statusListenArguments = [];
 
   /// The session IDs whose status streams have been cancelled, in order.
   final List<String> cancelledSessions = [];
+
+  /// The session IDs passed to `cancelCropVideo`, in order (known or not).
+  final List<String> cancelRequests = [];
+
+  /// When set, `startCropVideo` answers only once this completes, so a test
+  /// can act while the Dart side is still awaiting the session.
+  Completer<void>? startCropVideoGate;
 
   /// Status event sinks, keyed by session ID. A sink's [Completer] completes
   /// once the stream has a listener.
@@ -231,6 +242,9 @@ final class StubAmphitheatrePlatform {
         return _startCropVideo(call);
       case 'awaitCropVideo':
         return _awaitCropVideo(call);
+      case 'cancelCropVideo':
+        _cancelCropVideo(call);
+        return null;
       case 'getThumbnails':
         return _getThumbnails(call);
       default:
@@ -238,10 +252,11 @@ final class StubAmphitheatrePlatform {
     }
   }
 
-  List<Object?> _getThumbnails(MethodCall call) {
+  List<Object?>? _getThumbnails(MethodCall call) {
     _arg<String>(call, 'path');
     _arg<int>(call, 'count');
     _arg<int>(call, 'maxHeight');
+    if (thumbnailsError != null) throw thumbnailsError!;
     return thumbnails;
   }
 
@@ -274,12 +289,14 @@ final class StubAmphitheatrePlatform {
     }
   }
 
-  String _startCropVideo(MethodCall call) {
+  Future<String> _startCropVideo(MethodCall call) async {
     final String path = _arg<String>(call, 'path');
     final int start = _arg<int>(call, 'start');
     final int end = _arg<int>(call, 'end');
     final String? quality = _arg<String?>(call, 'quality');
     _validateCropRange(start, end);
+
+    await startCropVideoGate?.future;
 
     final sessionId = 'stub-session-${_nextSessionId++}';
     cropSessions[sessionId] = StubCropSession(
@@ -369,6 +386,33 @@ final class StubAmphitheatrePlatform {
     return pending.future;
   }
 
+  /// `cancelCropVideo`: a running session is cancelled (its `awaitCropVideo`
+  /// future fails with `EXPORT_CANCELLED` and a bound status stream ends); a
+  /// session the host no longer knows is a no-op.
+  void _cancelCropVideo(MethodCall call) {
+    final String sessionId = _arg<String>(call, 'sessionId');
+    cancelRequests.add(sessionId);
+    _cancelSession(sessionId);
+  }
+
+  /// Settle [sessionId] as cancelled if it is still running.
+  void _cancelSession(String sessionId) {
+    if (cropSessions.remove(sessionId) == null) return;
+
+    _pendingExports.remove(sessionId)!.completeError(
+          PlatformException(
+            code: 'EXPORT_CANCELLED',
+            message: 'The export session was cancelled.',
+          ),
+        );
+
+    final Completer<MockStreamHandlerEventSink>? sink =
+        _statusSinks.remove(sessionId);
+    if (sink != null && sink.isCompleted) {
+      unawaited(sink.future.then((events) => events.endOfStream()));
+    }
+  }
+
   /// Emit a crop status event to [sessionId]'s status stream, delivered once
   /// the stream has a listener.
   ///
@@ -439,16 +483,7 @@ final class StubAmphitheatrePlatform {
 
       // Cancelling the status subscription cancels the crop operation and
       // discards the session.
-      if (cropSessions.remove(sessionId) != null) {
-        _pendingExports
-            .remove(sessionId)!
-            .completeError(
-              PlatformException(
-                code: 'EXPORT_CANCELLED',
-                message: 'The export session was cancelled.',
-              ),
-            );
-      }
+      _cancelSession(sessionId);
     }
   }
 

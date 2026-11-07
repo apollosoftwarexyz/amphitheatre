@@ -11,11 +11,25 @@ final class FakeVideoPlayerPlatform extends VideoPlayerPlatform {
   /// When set, [createWithOptions] throws it, as the video player does from
   /// `setMixWithOthers` or `createWithOptions` before its error handler is
   /// registered.
+  ///
+  /// Unlike the real platform (video_player 2.14.1), whose `dispose()` never
+  /// completes after a failed `createWithOptions`, this fake's [dispose]
+  /// completes: a test that passes through a consuming widget's dispose in
+  /// this state does not cover that hang.
   final Exception? creationError;
 
   /// When set, the video's event stream delivers this error instead of the
   /// initialization event.
   final String? errorDescription;
+
+  /// How many times [play] was called, across every player.
+  int playCalls = 0;
+
+  /// How many times [pause] was called, across every player.
+  int pauseCalls = 0;
+
+  /// The positions passed to [seekTo], in order, across every player.
+  final List<Duration> seeks = [];
 
   var _nextPlayerId = 0;
 
@@ -63,16 +77,22 @@ final class FakeVideoPlayerPlatform extends VideoPlayerPlatform {
   Future<void> setLooping(int playerId, bool looping) async {}
 
   @override
-  Future<void> play(int playerId) async {}
+  Future<void> play(int playerId) async {
+    playCalls++;
+  }
 
   @override
-  Future<void> pause(int playerId) async {}
+  Future<void> pause(int playerId) async {
+    pauseCalls++;
+  }
 
   @override
   Future<void> setVolume(int playerId, double volume) async {}
 
   @override
-  Future<void> seekTo(int playerId, Duration position) async {}
+  Future<void> seekTo(int playerId, Duration position) async {
+    seeks.add(position);
+  }
 
   @override
   Future<void> setPlaybackSpeed(

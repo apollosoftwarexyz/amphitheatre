@@ -366,11 +366,22 @@ void main() {
       AmphitheatreEditorController withCrop(AmphitheatreEditorActionCrop a) =>
           AmphitheatreEditorController()..crop(start: a.start, end: a.end);
 
+      /// Preview the crop [startSeconds]..[endSeconds] on [controller].
+      void preview(
+        AmphitheatreEditorController controller,
+        int startSeconds,
+        int endSeconds,
+      ) =>
+          controller.previewCrop(
+            start: Duration(seconds: startSeconds),
+            end: Duration(seconds: endSeconds),
+          );
+
       test('previews replace the value without writing history', () {
         final AmphitheatreEditorController controller = withCrop(crop(0, 10))
-          ..beginCropGesture()
-          ..previewCrop(start: const Duration(seconds: 1), end: const Duration(seconds: 10))
-          ..previewCrop(start: const Duration(seconds: 2), end: const Duration(seconds: 10));
+          ..beginCropGesture();
+        preview(controller, 1, 10);
+        preview(controller, 2, 10);
 
         expect(controller.isInCropGesture, isTrue);
         expect(controller.value.crop, equals(crop(2, 10)));
@@ -387,11 +398,11 @@ void main() {
 
       test('the release writes the value from before the gesture, once', () {
         final AmphitheatreEditorController controller = withCrop(crop(0, 10))
-          ..beginCropGesture()
-          ..previewCrop(start: const Duration(seconds: 1), end: const Duration(seconds: 10))
-          ..previewCrop(start: const Duration(seconds: 2), end: const Duration(seconds: 10))
-          ..previewCrop(start: const Duration(seconds: 3), end: const Duration(seconds: 10))
-          ..endCropGesture();
+          ..beginCropGesture();
+        preview(controller, 1, 10);
+        preview(controller, 2, 10);
+        preview(controller, 3, 10);
+        controller.endCropGesture();
 
         expect(controller.isInCropGesture, isFalse);
         expect(controller.value.crop, equals(crop(3, 10)));
@@ -404,11 +415,11 @@ void main() {
 
       test('a release at the last preview position still writes the entry', () {
         final AmphitheatreEditorController controller = withCrop(crop(0, 10))
-          ..beginCropGesture()
-          ..previewCrop(start: const Duration(seconds: 2), end: const Duration(seconds: 10))
-          // The release reports the same position as the last update.
-          ..previewCrop(start: const Duration(seconds: 2), end: const Duration(seconds: 10))
-          ..endCropGesture();
+          ..beginCropGesture();
+        preview(controller, 2, 10);
+        // The release reports the same position as the last update.
+        preview(controller, 2, 10);
+        controller.endCropGesture();
 
         expect(controller.value.crop, equals(crop(2, 10)));
         controller.undo();
@@ -417,10 +428,10 @@ void main() {
 
       test('a gesture that ends where it began writes nothing', () {
         final AmphitheatreEditorController controller = withCrop(crop(0, 10))
-          ..beginCropGesture()
-          ..previewCrop(start: const Duration(seconds: 2), end: const Duration(seconds: 10))
-          ..previewCrop(start: Duration.zero, end: const Duration(seconds: 10))
-          ..endCropGesture();
+          ..beginCropGesture();
+        preview(controller, 2, 10);
+        preview(controller, 0, 10);
+        controller.endCropGesture();
 
         expect(controller.value.crop, equals(crop(0, 10)));
         controller.undo();
@@ -429,15 +440,17 @@ void main() {
 
       test('a cancelled gesture restores the value and leaves both stacks', () {
         final AmphitheatreEditorController controller = withCrop(crop(0, 10))
-          ..crop(start: const Duration(seconds: 5), end: const Duration(seconds: 10))
+          ..crop(
+            start: const Duration(seconds: 5),
+            end: const Duration(seconds: 10),
+          )
           ..undo();
         expect(controller.value.crop, equals(crop(0, 10)));
         expect(controller.hasRedo, isTrue);
 
-        controller
-          ..beginCropGesture()
-          ..previewCrop(start: const Duration(seconds: 2), end: const Duration(seconds: 10))
-          ..cancelCropGesture();
+        controller.beginCropGesture();
+        preview(controller, 2, 10);
+        controller.cancelCropGesture();
 
         expect(controller.isInCropGesture, isFalse);
         expect(controller.value.crop, equals(crop(0, 10)));
@@ -452,10 +465,13 @@ void main() {
 
       test('previews keep the redo stack and the release clears it', () {
         final AmphitheatreEditorController controller = withCrop(crop(0, 10))
-          ..crop(start: const Duration(seconds: 5), end: const Duration(seconds: 10))
+          ..crop(
+            start: const Duration(seconds: 5),
+            end: const Duration(seconds: 10),
+          )
           ..undo()
-          ..beginCropGesture()
-          ..previewCrop(start: const Duration(seconds: 2), end: const Duration(seconds: 10));
+          ..beginCropGesture();
+        preview(controller, 2, 10);
         expect(controller.hasRedo, isTrue);
 
         controller.endCropGesture();
@@ -465,9 +481,9 @@ void main() {
 
       test('undo during a gesture ends it first', () {
         final AmphitheatreEditorController controller = withCrop(crop(0, 10))
-          ..beginCropGesture()
-          ..previewCrop(start: const Duration(seconds: 2), end: const Duration(seconds: 10))
-          ..undo();
+          ..beginCropGesture();
+        preview(controller, 2, 10);
+        controller.undo();
 
         expect(controller.isInCropGesture, isFalse);
         // The gesture became the entry that was undone.
@@ -477,13 +493,133 @@ void main() {
         expect(controller.value.crop, equals(crop(2, 10)));
       });
 
-      test('previewCrop outside a gesture is a crop without history', () {
+      test('redo during a gesture ends it first', () {
         final AmphitheatreEditorController controller = withCrop(crop(0, 10))
-          ..previewCrop(start: const Duration(seconds: 2), end: const Duration(seconds: 10));
+          ..crop(
+            start: const Duration(seconds: 5),
+            end: const Duration(seconds: 10),
+          )
+          ..undo()
+          ..beginCropGesture();
+        preview(controller, 2, 10);
+        controller.redo();
+
+        expect(controller.isInCropGesture, isFalse);
+        // The gesture's entry cleared the redo stack, so there was nothing to
+        // redo: the previewed value stands, with the gesture in the history.
+        expect(controller.value.crop, equals(crop(2, 10)));
+        expect(controller.hasRedo, isFalse);
+        controller.undo();
+        expect(controller.value.crop, equals(crop(0, 10)));
+      });
+
+      test('clearHistory during a gesture ends it first', () {
+        final AmphitheatreEditorController controller = withCrop(crop(0, 10))
+          ..beginCropGesture();
+        preview(controller, 2, 10);
+        controller.clearHistory();
+
+        expect(controller.isInCropGesture, isFalse);
+        expect(controller.value.crop, equals(crop(2, 10)));
+        expect(controller.hasUndo, isFalse);
+        expect(controller.hasRedo, isFalse);
+      });
+
+      test('reset during a gesture ends it first', () {
+        final AmphitheatreEditorController controller = withCrop(crop(0, 10))
+          ..beginCropGesture();
+        preview(controller, 2, 10);
+        controller.reset();
+
+        expect(controller.isInCropGesture, isFalse);
+        expect(controller.value.crop, isNull);
+        expect(controller.hasUndo, isFalse);
+        expect(controller.hasRedo, isFalse);
+      });
+
+      test('beginCropGesture during a gesture keeps the origin', () {
+        final AmphitheatreEditorController controller = withCrop(crop(0, 10))
+          ..beginCropGesture();
+        preview(controller, 2, 10);
+        controller.beginCropGesture();
+        preview(controller, 3, 10);
+        controller.cancelCropGesture();
+
+        expect(controller.value.crop, equals(crop(0, 10)));
+      });
+
+      test('endCropGesture and cancelCropGesture outside a gesture do nothing',
+          () {
+        final AmphitheatreEditorController controller = withCrop(crop(0, 10));
+        var notifications = 0;
+        controller
+          ..addListener(() => notifications++)
+          ..endCropGesture()
+          ..cancelCropGesture();
+
+        expect(controller.isInCropGesture, isFalse);
+        expect(controller.value.crop, equals(crop(0, 10)));
+        expect(controller.hasUndo, isTrue);
+        expect(notifications, equals(0));
+      });
+
+      test('previewCrop outside a gesture is a crop without history', () {
+        final AmphitheatreEditorController controller = withCrop(crop(0, 10));
+        preview(controller, 2, 10);
 
         expect(controller.value.crop, equals(crop(2, 10)));
         controller.undo();
         expect(controller.value.crop, isNull);
+      });
+
+      test('notifies once per preview, once on a changed release', () {
+        final AmphitheatreEditorController controller = withCrop(crop(0, 10));
+        var notifications = 0;
+        controller
+          ..addListener(() => notifications++)
+          ..beginCropGesture();
+        expect(notifications, equals(0));
+
+        preview(controller, 1, 10);
+        preview(controller, 2, 10);
+        // The same value again is not a change.
+        preview(controller, 2, 10);
+        expect(notifications, equals(2));
+
+        controller.endCropGesture();
+        expect(notifications, equals(3));
+      });
+
+      test('does not notify on a release without a change', () {
+        final AmphitheatreEditorController controller = withCrop(crop(0, 10));
+        var notifications = 0;
+        controller
+          ..addListener(() => notifications++)
+          ..beginCropGesture();
+        preview(controller, 2, 10);
+        preview(controller, 0, 10);
+        expect(notifications, equals(2));
+
+        controller.endCropGesture();
+        expect(notifications, equals(2));
+      });
+
+      test('notifies once on a cancel that restores the origin', () {
+        final AmphitheatreEditorController controller = withCrop(crop(0, 10));
+        var notifications = 0;
+        controller
+          ..addListener(() => notifications++)
+          ..beginCropGesture();
+        preview(controller, 2, 10);
+        controller.cancelCropGesture();
+        expect(notifications, equals(2));
+
+        // Already at the origin: nothing to restore, nothing to notify.
+        controller.beginCropGesture();
+        preview(controller, 2, 10);
+        preview(controller, 0, 10);
+        controller.cancelCropGesture();
+        expect(notifications, equals(4));
       });
     });
 
