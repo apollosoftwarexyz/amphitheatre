@@ -12,5 +12,6 @@
   "exportingVideo": "Exportando el video ({progress})...",
   "unknownError": "Ocurrió un error desconocido.",
   "retry": "Reintentar",
+  "videoLoadFailed": "Este video no se puede reproducir.",
   "selectedDuration": "{time} seleccionados"
 }

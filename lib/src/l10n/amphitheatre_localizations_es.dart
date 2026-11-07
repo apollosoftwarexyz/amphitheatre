@@ -57,6 +57,9 @@ class AmphitheatreLocalizationsEs extends AmphitheatreLocalizations {
   String get retry => 'Reintentar';
 
   @override
+  String get videoLoadFailed => 'Este video no se puede reproducir.';
+
+  @override
   String selectedDuration(String time) {
     return '$time seleccionados';
   }
@@ -110,6 +113,9 @@ class AmphitheatreLocalizationsEs419 extends AmphitheatreLocalizationsEs {
 
   @override
   String get retry => 'Reintentar';
+
+  @override
+  String get videoLoadFailed => 'Este video no se puede reproducir.';
 
   @override
   String selectedDuration(String time) {

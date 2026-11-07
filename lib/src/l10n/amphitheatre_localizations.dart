@@ -175,6 +175,12 @@ abstract class AmphitheatreLocalizations {
   /// **'Try again'**
   String get retry;
 
+  /// Shown in the player in place of the video when it failed to load.
+  ///
+  /// In en, this message translates to:
+  /// **'This video can\'t be played.'**
+  String get videoLoadFailed;
+
   /// Shown under the editor's timeline, indicating the length of the current selection (e.g., '00:42 selected').
   ///
   /// In en, this message translates to:

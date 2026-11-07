@@ -117,7 +117,18 @@ class AmphitheatreController with ChangeNotifier {
   /// Returns the aspect ratio of the video.
   double get aspectRatio => controller.value.aspectRatio;
 
+  /// Whether the video cannot be played: the underlying [controller] reports
+  /// an error, or its initialization threw.
+  ///
+  /// The latter is tracked here because the video player throws from
+  /// `setMixWithOthers` and `createWithOptions` before it has registered the
+  /// error handler that feeds `value.hasError`, so those failures never reach
+  /// the value.
+  bool get hasError => controller.value.hasError || _initializationFailed;
+
   var _initialized = false;
+  var _initializationFailed = false;
+  var _disposed = false;
   Completer<void>? _initialization;
 
   /// Completes once [initialize] has finished, autoplay included, so that a
@@ -143,7 +154,13 @@ class AmphitheatreController with ChangeNotifier {
 
     unawaited(
       controller.initialize().then((_) {
+        // The controller may have been disposed during the initialization.
+        if (_disposed) return;
         if (autoPlay) play();
+      }).catchError((Object error) {
+        if (_disposed) return;
+        _initializationFailed = true;
+        notifyListeners();
       }).whenComplete(initialization.complete),
     );
   }
@@ -178,12 +195,16 @@ class AmphitheatreController with ChangeNotifier {
   /// Dispose the underlying [controller], then the [AmphitheatreController].
   @override
   Future<void> dispose() async {
+    // Set before the await: a continuation of initialize() that lands while
+    // the underlying controller is being disposed must not play or notify.
+    _disposed = true;
     await controller.dispose();
     super.dispose();
 
     // As everything is now disposed, mark that the controller can be
     // re-initialized if desired.
     _initialized = false;
+    _initializationFailed = false;
   }
 
   /// Fetch the path for the video from the underlying controller (e.g., so it

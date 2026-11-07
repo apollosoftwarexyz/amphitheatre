@@ -57,6 +57,9 @@ class AmphitheatreLocalizationsEn extends AmphitheatreLocalizations {
   String get retry => 'Try again';
 
   @override
+  String get videoLoadFailed => 'This video can\'t be played.';
+
+  @override
   String selectedDuration(String time) {
     return '$time selected';
   }
