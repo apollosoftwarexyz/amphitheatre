@@ -377,14 +377,8 @@ class AmphitheatrePlugin: FlutterPlugin, EventChannel.StreamHandler, MethodCallH
       // no video track) no effect is added: a video effect on an audio-only file fails the export.
       if (targetShortSide != null) {
         val size = displaySizeOf(path)
-        if (size != null) {
-          val (width, height) = size
-          val presentation = if (height > width) {
-            if (width > targetShortSide) Presentation.createForWidth(targetShortSide) else null
-          } else {
-            if (height > targetShortSide) Presentation.createForHeight(targetShortSide) else null
-          }
-          if (presentation != null) setEffects(Effects(emptyList(), listOf(presentation)))
+        if (size != null && minOf(size.first, size.second) > targetShortSide) {
+          setEffects(Effects(emptyList(), listOf(Presentation.createForShortSide(targetShortSide))))
         }
       }
     }.build()
