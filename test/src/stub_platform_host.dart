@@ -243,7 +243,7 @@ final class StubAmphitheatrePlatform {
       case 'awaitCropVideo':
         return _awaitCropVideo(call);
       case 'cancelCropVideo':
-        _cancelCropVideo(call);
+        await _cancelCropVideo(call);
         return null;
       case 'getThumbnails':
         return _getThumbnails(call);
@@ -347,7 +347,8 @@ final class StubAmphitheatrePlatform {
     String code = 'EXPORT_FAILED',
     String message = 'an error occurred during the export session',
   }) async {
-    final Completer<MockStreamHandlerEventSink>? sink = _statusSinks[sessionId];
+    final Completer<MockStreamHandlerEventSink>? sink =
+        _statusSinks.remove(sessionId);
     cropSessions.remove(sessionId)!;
     _pendingExports
         .remove(sessionId)!
@@ -356,6 +357,17 @@ final class StubAmphitheatrePlatform {
     if (sink != null && sink.isCompleted) {
       (await sink.future).endOfStream();
     }
+  }
+
+  /// Cancel the export for [sessionId] if it is still running: it concludes
+  /// with `EXPORT_CANCELLED` (see [failCropVideo]).
+  Future<void> _cancelCropSession(String sessionId) async {
+    if (!cropSessions.containsKey(sessionId)) return;
+    await failCropVideo(
+      sessionId,
+      code: 'EXPORT_CANCELLED',
+      message: 'The export session was cancelled.',
+    );
   }
 
   /// Reject a crop range whose [start] is after its [end], mirroring the
@@ -386,31 +398,12 @@ final class StubAmphitheatrePlatform {
     return pending.future;
   }
 
-  /// `cancelCropVideo`: a running session is cancelled (its `awaitCropVideo`
-  /// future fails with `EXPORT_CANCELLED` and a bound status stream ends); a
-  /// session the host no longer knows is a no-op.
-  void _cancelCropVideo(MethodCall call) {
+  /// `cancelCropVideo`: a running session is cancelled; a session the host no
+  /// longer knows is a no-op.
+  Future<void> _cancelCropVideo(MethodCall call) {
     final String sessionId = _arg<String>(call, 'sessionId');
     cancelRequests.add(sessionId);
-    _cancelSession(sessionId);
-  }
-
-  /// Settle [sessionId] as cancelled if it is still running.
-  void _cancelSession(String sessionId) {
-    if (cropSessions.remove(sessionId) == null) return;
-
-    _pendingExports.remove(sessionId)!.completeError(
-          PlatformException(
-            code: 'EXPORT_CANCELLED',
-            message: 'The export session was cancelled.',
-          ),
-        );
-
-    final Completer<MockStreamHandlerEventSink>? sink =
-        _statusSinks.remove(sessionId);
-    if (sink != null && sink.isCompleted) {
-      unawaited(sink.future.then((events) => events.endOfStream()));
-    }
+    return _cancelCropSession(sessionId);
   }
 
   /// Emit a crop status event to [sessionId]'s status stream, delivered once
@@ -483,7 +476,7 @@ final class StubAmphitheatrePlatform {
 
       // Cancelling the status subscription cancels the crop operation and
       // discards the session.
-      _cancelSession(sessionId);
+      unawaited(_cancelCropSession(sessionId));
     }
   }
 
