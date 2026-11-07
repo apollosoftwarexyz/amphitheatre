@@ -124,12 +124,17 @@ class AmphitheatreController with ChangeNotifier {
   /// `setMixWithOthers` and `createWithOptions` before it has registered the
   /// error handler that feeds `value.hasError`, so those failures never reach
   /// the value.
-  bool get hasError => controller.value.hasError || _initializationFailed;
+  bool get hasError =>
+      controller.value.hasError || _initializationError != null;
 
-  var _initialized = false;
-  var _initializationFailed = false;
-  var _disposed = false;
+  /// The initialization started by [initialize], or null when it was never
+  /// called on this controller.
   Completer<void>? _initialization;
+
+  /// The error with which the initialization failed, if it did.
+  Object? _initializationError;
+
+  var _disposed = false;
 
   /// Completes once [initialize] has finished (successfully or not) and any
   /// autoplay has been issued to the [controller]. Commands sent to the
@@ -149,9 +154,7 @@ class AmphitheatreController with ChangeNotifier {
   void initialize({bool autoPlay = true, bool looping = false}) {
     // Ensure the controller is not re-initialized when it is already
     // initialized.
-    if (_initialized) return;
-    _initialized = true;
-
+    if (_initialization != null) return;
     final initialization = Completer<void>();
     _initialization = initialization;
 
@@ -174,7 +177,7 @@ class AmphitheatreController with ChangeNotifier {
         );
 
         if (_disposed) return;
-        _initializationFailed = true;
+        _initializationError = error;
         notifyListeners();
       }).whenComplete(initialization.complete),
     );

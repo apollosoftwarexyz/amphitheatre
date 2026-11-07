@@ -501,7 +501,7 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
   /// Render the modified video.
   Future<void> produceOutputVideo() async {
     // A "try again" from the SnackBar can outlive the editor.
-    if (_export != null || !mounted) return;
+    if (exporting || !mounted) return;
     final export = _Export();
 
     // Whether the editor is still waiting for this export.
@@ -619,7 +619,7 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
   /// platform's cancel path); an export still preparing stands down once its
   /// current await returns.
   void cancelExport() {
-    if (_export == null) return;
+    if (!exporting) return;
     _returnToEditor();
   }
 
@@ -667,7 +667,7 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
 
   @override
   Widget build(BuildContext context) {
-    if (_export != null) {
+    if (exporting) {
       return widget.buildExporterProgress(
         progress: progress,
         onCancel: cancelExport,
