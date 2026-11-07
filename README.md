@@ -38,9 +38,9 @@ A Flutter video player and editor.
             <td>13.0+ *</td>
         </tr>
         <tr>
-            <td><b>Supported Devices<br/><small>(as of Jan 3, 2025)</small></b></td>
-            <td><a href="https://web.archive.org/web/20241222230146/https://apilevels.com/" target="_blank">99.7%</a></td>
-            <td><a href="https://web.archive.org/web/20250102215257/https://iosref.com/ios-usage" target="_blank">96.8%</a></td>
+            <td><b>Supported Devices<br/><small>(as of Nov 3, 2026)</small></b></td>
+            <td><a href="https://web.archive.org/web/20261107192526/https://apilevels.com/" target="_blank">99.7%</a></td>
+            <td><a href="https://web.archive.org/web/20261107192545/https://iosref.com/ios-usage" target="_blank">99.5%</a></td>
         </tr>
     </tbody>
 </table>
