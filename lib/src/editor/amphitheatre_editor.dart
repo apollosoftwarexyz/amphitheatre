@@ -869,16 +869,17 @@ enum _AmphitheatreEditorSliderDragMode {
 /// The track is the space between the two crop handle gutters; positions are
 /// in the slider's local coordinate space.
 @immutable
-final class _SliderMetrics {
-  final Size size;
-  final AmphitheatreEditorStyle style;
-  final int max;
+final class const _SliderMetrics({
+  /// The size of the slider.
+  required final Size size,
 
-  const _SliderMetrics({
-    required this.size,
-    required this.style,
-    required this.max,
-  });
+  /// The style the slider is painted with.
+  required final AmphitheatreEditorStyle style,
+
+  /// The duration of the video, in milliseconds.
+  required final int max,
+}) {
+  this;
 
   /// The width reserved on each side of the track for a crop handle.
   double get inset => style.cropHandleSize + style.borderThickness;
@@ -1646,22 +1647,24 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
 /// Paints the timeline itself: the track, the filmstrip thumbnails, the
 /// playback head and the border. The crop selection is painted on top by
 /// [_AmphitheatreEditorSliderCropPainter].
-class _AmphitheatreEditorSliderPainter extends CustomPainter {
+class const _AmphitheatreEditorSliderPainter({
+  /// The position of the playback head, in milliseconds.
+  required final int value,
+
+  /// The duration of the video, in milliseconds.
+  required final int max,
+
+  /// The style the slider is painted with.
+  required final AmphitheatreEditorStyle style,
+
+  /// The filmstrip thumbnails, in timeline order.
+  required final List<ui.Image> thumbnails,
+}) extends CustomPainter {
   /// The color of the track behind the filmstrip: visible until the
   /// thumbnails arrive, and wherever a frame does not cover the track.
   static const _trackColor = Colors.transparent;
 
-  final int value;
-  final int max;
-  final AmphitheatreEditorStyle style;
-  final List<ui.Image> thumbnails;
-
-  const _AmphitheatreEditorSliderPainter({
-    required this.value,
-    required this.max,
-    required this.style,
-    required this.thumbnails,
-  });
+  this;
 
   @override
   bool operator ==(Object other) =>
@@ -1753,29 +1756,33 @@ class _AmphitheatreEditorSliderPainter extends CustomPainter {
   }
 }
 
-class _AmphitheatreEditorSliderCropPainter extends CustomPainter {
+class const _AmphitheatreEditorSliderCropPainter({
+  /// The size of the slider, which must match the size it is painted at
+  /// (see [paint]).
+  required final Size size,
+
+  /// The style the slider is painted with.
+  required final AmphitheatreEditorStyle style,
+
+  /// The start of the selection, in milliseconds.
+  required final int cropStart,
+
+  /// The end of the selection, in milliseconds.
+  required final int cropEnd,
+
+  /// The duration of the video, in milliseconds.
+  required final int max,
+
+  /// The decoded [AmphitheatreEditorStyle.cropStartIcon], if any.
+  required final ui.Image? cropStartIcon,
+
+  /// The decoded [AmphitheatreEditorStyle.cropEndIcon], if any.
+  required final ui.Image? cropEndIcon,
+}) extends CustomPainter {
   /// The color drawn over the parts of the track outside the selection.
   static const _selectionDimColor = Colors.black54;
 
-  final Size size;
-  final AmphitheatreEditorStyle style;
-
-  final int cropStart;
-  final int cropEnd;
-  final int max;
-
-  final ui.Image? cropStartIcon;
-  final ui.Image? cropEndIcon;
-
-  const _AmphitheatreEditorSliderCropPainter({
-    required this.size,
-    required this.style,
-    required this.cropStart,
-    required this.cropEnd,
-    required this.max,
-    required this.cropStartIcon,
-    required this.cropEndIcon,
-  });
+  this;
 
   @override
   bool operator ==(Object other) =>
