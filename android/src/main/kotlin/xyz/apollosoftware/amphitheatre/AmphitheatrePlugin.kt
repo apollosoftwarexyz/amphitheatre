@@ -379,11 +379,8 @@ class AmphitheatrePlugin: FlutterPlugin, EventChannel.StreamHandler, MethodCallH
         val size = displaySizeOf(path)
         if (size != null) {
           val (width, height) = size
-          val presentation = if (height > width) {
-            if (width > targetShortSide) Presentation.createForWidth(targetShortSide) else null
-          } else {
-            if (height > targetShortSide) Presentation.createForHeight(targetShortSide) else null
-          }
+          val presentation =
+            if (minOf(width, height) > targetShortSide) Presentation.createForShortSide(targetShortSide) else null
           if (presentation != null) setEffects(Effects(emptyList(), listOf(presentation)))
         }
       }
@@ -654,7 +651,7 @@ class AmphitheatrePlugin: FlutterPlugin, EventChannel.StreamHandler, MethodCallH
     // Resolved before the coroutine is dispatched: see lookUpCropVideo.
     val awaitedSession: AmphitheatreExportSession? = if (call.method == "awaitCropVideo") {
       try {
-        lookUpCropVideo(SessionArgs.parse(call.arguments()!!))
+        lookUpCropVideo(SessionArgs.parse(call))
       } catch (error: FlutterError) {
         return result.error(error.code, error.message, error.details)
       } catch (error: Throwable) {
