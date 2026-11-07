@@ -118,6 +118,15 @@ class AmphitheatreController with ChangeNotifier {
   double get aspectRatio => controller.value.aspectRatio;
 
   var _initialized = false;
+  Completer<void>? _initialization;
+
+  /// Completes once [initialize] has finished, autoplay included, so that a
+  /// caller who needs the player quiet afterwards (see
+  /// [AmphitheatreEditorOptions.canAutoAccept]) does not race the pending
+  /// play. Already complete when [initialize] was never called on this
+  /// controller (the underlying [controller] was initialized directly).
+  Future<void> get whenInitialized =>
+      _initialization?.future ?? Future<void>.value();
 
   /// Initialize the underlying [controller].
   void initialize({bool autoPlay = true, bool looping = false}) {
@@ -126,13 +135,16 @@ class AmphitheatreController with ChangeNotifier {
     if (_initialized) return;
     _initialized = true;
 
+    final initialization = Completer<void>();
+    _initialization = initialization;
+
     controller.addListener(_onControllerUpdate);
     unawaited(controller.setLooping(looping));
 
     unawaited(
       controller.initialize().then((_) {
         if (autoPlay) play();
-      }),
+      }).whenComplete(initialization.complete),
     );
   }
 

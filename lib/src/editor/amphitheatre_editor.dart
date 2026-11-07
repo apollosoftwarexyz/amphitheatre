@@ -21,14 +21,18 @@ part 'amphitheatre_editor_controller.dart';
 /// Editing options for the [AmphitheatreEditor].
 @immutable
 final class AmphitheatreEditorOptions {
-  /// Whether to auto-accept videos that are too short (less than [minLength]).
+  /// Whether to auto-accept videos that are too short to trim (no longer than
+  /// [minLength]).
   ///
   /// If the video is too long (i.e., its duration is greater than
   /// [maxLength]), the editor is used to prompt the user to crop the video
   /// down to size.
   ///
   /// If the video is too short, the video will be automatically accepted when
-  /// [canAutoAccept] is true.
+  /// [canAutoAccept] is true: the editor pops with the video's own path as
+  /// soon as it has loaded, without showing itself. Only a video with a file
+  /// path can be accepted this way (see [AmphitheatreController.getVideoPath]);
+  /// any other source shows the editor.
   ///
   /// To automatically reject videos, applications should intercept the video
   /// before it is passed to the [AmphitheatreEditor] - this provides greater
@@ -62,13 +66,12 @@ final class AmphitheatreEditorOptions {
     this.onExceedsDiskSpace,
   });
 
-  /// If [canAutoAccept] is true and the video is shorter than [minLength] in
-  /// duration (or both are zero), this method returns true to indicate that
-  /// the video should be automatically accepted.
+  /// If [canAutoAccept] is true and the video is no longer than [minLength],
+  /// this method returns true to indicate that the video should be
+  /// automatically accepted: a video exactly [minLength] long has nothing to
+  /// trim.
   bool shouldAutoAccept(Duration duration) =>
-      canAutoAccept &&
-      ((duration < minLength) ||
-          (duration == Duration.zero && minLength == Duration.zero));
+      canAutoAccept && duration <= minLength;
 
   /// Returns the default start and end offsets for cropping. The offsets are
   /// based on computing the maximum length that can surround the middle of the
@@ -347,6 +350,10 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
 
   double? _progress;
 
+  /// Whether [AmphitheatreEditorOptions.shouldAutoAccept] has been consulted
+  /// for the loaded video.
+  var _autoAcceptHandled = false;
+
   /// When the video is exporting.
   bool get exporting => _exporting;
 
@@ -363,6 +370,7 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
   @override
   void initState() {
     editorController.addListener(() => setState(() {}));
+    widget.controller.addListener(_maybeAutoAccept);
     super.initState();
 
     // The editor owns a consumed controller for its whole life, rather than
@@ -371,17 +379,63 @@ class AmphitheatreEditorState extends State<AmphitheatreEditor> {
     if (widget.consumedController) {
       widget.controller.initialize(autoPlay: false);
     }
+
+    // A controller handed over already initialized (and quiet) notifies
+    // nothing more; it is looked at once the editor is in the tree.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _maybeAutoAccept();
+    });
   }
 
   @override
   void dispose() {
     _exportGeneration++;
     unawaited(_exportStatusStream?.cancel());
+    widget.controller.removeListener(_maybeAutoAccept);
     editorController.dispose();
     if (widget.consumedController) {
       unawaited(widget.controller.dispose());
     }
     super.dispose();
+  }
+
+  /// Consults [AmphitheatreEditorOptions.shouldAutoAccept] once the video has
+  /// loaded.
+  void _maybeAutoAccept() {
+    if (_autoAcceptHandled || !widget.controller.isInitialized) return;
+    _autoAcceptHandled = true;
+
+    if (widget.options.shouldAutoAccept(widget.controller.duration)) {
+      unawaited(_autoAccept());
+    }
+  }
+
+  /// Pops with the video's own path, as long as this editor is still the
+  /// current route: the user may have left while the video loaded, and a pop
+  /// then would take the route underneath with it. An editor that is not a
+  /// route of its own is left showing.
+  Future<void> _autoAccept() async {
+    final ModalRoute<Object?>? route = ModalRoute.of(context);
+    if (route == null || !route.isCurrent) return;
+
+    final AmphitheatreVideoPath videoPath;
+    try {
+      videoPath =
+          await widget.controller.getVideoPath(temporaryFileFallback: false);
+    } on UnsupportedError {
+      // Not a file: the editor is shown instead.
+      return;
+    }
+
+    // The pending autoplay of the initialization must not restart the video
+    // after the pause below.
+    await widget.controller.whenInitialized;
+    if (!mounted || !route.isCurrent) return;
+
+    // The video started playing when it loaded; nothing should be heard while
+    // the route animates away.
+    widget.controller.pause();
+    route.navigator?.pop(videoPath.path);
   }
 
   /// Whether the changes can be accepted. This is currently based on whether
@@ -1327,7 +1381,14 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
           cropEnd = cropStart + widget.options.minLength;
 
           if (cropEnd >= duration) {
-            cropStart = duration - widget.options.minLength;
+            // A video shorter than minLength selects all of it: the start
+            // must not go negative, or the handle leaves the slider.
+            cropStart = Duration(
+              milliseconds: max(
+                0,
+                (duration - widget.options.minLength).inMilliseconds,
+              ),
+            );
             cropEnd = duration;
           }
         } else {
@@ -1335,7 +1396,13 @@ class _AmphitheatreEditorSliderState extends State<AmphitheatreEditorSlider> {
 
           if (cropStart <= Duration.zero) {
             cropStart = Duration.zero;
-            cropEnd = widget.options.minLength;
+            // Likewise the end must not pass the video.
+            cropEnd = Duration(
+              milliseconds: min(
+                widget.options.minLength.inMilliseconds,
+                durationMilliseconds,
+              ),
+            );
           }
         }
       }
